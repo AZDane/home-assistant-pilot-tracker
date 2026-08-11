@@ -11,6 +11,8 @@ from .coordinator import PilotTrackerCoordinator
 from .frontend import FrontendRegistration
 from .storage import TripStore
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register services and the bundled dashboard card."""

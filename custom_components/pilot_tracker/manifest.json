@@ -2,6 +2,7 @@
   "after_dependencies": ["flightradar24"],
   "codeowners": ["@AZDane"],
   "config_flow": true,
+  "dependencies": ["http"],
   "documentation": "https://github.com/AZDane/home-assistant-pilot-tracker",
   "domain": "pilot_tracker",
   "integration_type": "service",
