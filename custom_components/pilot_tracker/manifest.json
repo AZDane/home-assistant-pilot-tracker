@@ -1,0 +1,13 @@
+{
+  "after_dependencies": ["flightradar24"],
+  "codeowners": ["@AZDane"],
+  "config_flow": true,
+  "documentation": "https://github.com/AZDane/home-assistant-pilot-tracker",
+  "domain": "pilot_tracker",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/AZDane/home-assistant-pilot-tracker/issues",
+  "name": "Pilot Tracker",
+  "requirements": ["airportsdata==20260315"],
+  "version": "1.0.0"
+}

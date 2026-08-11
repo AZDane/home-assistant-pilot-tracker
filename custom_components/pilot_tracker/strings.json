@@ -1,0 +1,62 @@
+{
+  "title": "Pilot Tracker",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Pilot Tracker",
+        "description": "Create the Pilot Tracker integration."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Manage schedule",
+        "menu_options": {
+          "import_schedule": "Import or replace schedule",
+          "view_schedule": "View current schedule",
+          "reset_aircraft": "Resolve an aircraft change",
+          "complete_current_leg": "Manually complete current leg",
+          "clear_schedule": "Remove a schedule"
+        }
+      },
+      "import_schedule": {
+        "title": "Import or replace schedule",
+        "description": "Paste text extracted from a Southwest pairing displayed in HERB TIME/ESTIMATED.",
+        "data": {"schedule_text": "Pairing text"}
+      },
+      "view_schedule": {
+        "title": "View schedules",
+        "description": "{schedule}",
+        "data": {"trip_key": "Schedule"}
+      },
+      "view_schedule_detail": {
+        "title": "Schedule details",
+        "description": "{schedule}"
+      },
+      "clear_schedule": {
+        "title": "Remove a schedule",
+        "description": "Remove the selected schedule from Pilot Tracker without affecting other loaded schedules.",
+        "data": {"trip_key": "Schedule", "confirm": "Confirm removal"}
+      },
+      "reset_aircraft": {
+        "title": "Resolve an aircraft change",
+        "description": "Release the aircraft currently associated with this leg and safely run candidate validation again. Use this only after confirming an actual aircraft swap.",
+        "data": {"confirm": "Confirm aircraft reset"}
+      },
+      "complete_current_leg": {
+        "title": "Manually complete current leg",
+        "description": "Mark the active leg complete and open the next leg. Use this only after confirming arrival when automatic FR24 evidence is missing.",
+        "data": {"confirm": "Confirm the aircraft has arrived"}
+      }
+    },
+    "error": {
+      "invalid_schedule": "The text is not a supported Southwest HERB TIME pairing.",
+      "schedule_conflict": "This schedule conflicts with the active trip or current leg and was not applied.",
+      "no_current_leg": "There is no current leg to reset.",
+      "no_active_leg": "There is no actively tracked leg to complete.",
+      "schedule_horizon": "The loaded schedules would span more than 62 days. Remove older schedules first.",
+      "active_trip_tracking": "A schedule cannot be removed while its current leg is actively tracked."
+    }
+  }
+}

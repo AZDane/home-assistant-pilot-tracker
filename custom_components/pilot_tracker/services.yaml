@@ -1,0 +1,34 @@
+import_schedule:
+  name: Import schedule
+  description: Import or revise a Southwest HERB TIME pairing.
+  fields:
+    schedule_text:
+      name: Schedule text
+      required: true
+      selector:
+        text:
+          multiline: true
+remove_schedule:
+  name: Remove schedule
+  description: Remove one schedule by its stable trip key.
+  fields:
+    trip_key:
+      name: Trip key
+      required: true
+      selector:
+        text:
+resolve_schedule_conflict:
+  name: Resolve schedule conflict
+  description: Keep one conflicting schedule and delete the other conflicting schedules.
+  fields:
+    keep_trip_key:
+      name: Schedule to keep
+      required: true
+      selector:
+        text:
+reset_aircraft:
+  name: Accept aircraft reassignment
+  description: Release the previously identified aircraft and validate the replacement.
+complete_current_leg:
+  name: Confirm arrival
+  description: Manually complete the current active leg after independently confirming arrival.
