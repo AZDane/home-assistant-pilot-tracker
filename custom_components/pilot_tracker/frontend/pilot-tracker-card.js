@@ -7,23 +7,20 @@ function flightKey(hass, entityId) {
 function updateFlightMap(card, hass, entityId, owner) {
   const key = flightKey(hass, entityId);
   const isNewFlight = key !== owner._mapFlightKey;
-  owner._mapFlightKey = key;
+  const state = hass?.states?.[entityId];
   if (isNewFlight) {
+    owner._mapFlightKey = key;
+    owner._mapBounds = state?.attributes?.bounds;
+  }
+  if (!state?.attributes || !owner._mapBounds) {
     card.hass = hass;
     return;
   }
 
-  // The FR24 card treats `bounds` as an instruction to fit the map. Passing
-  // moving bounds on every position update resets a user's manual zoom. Keep
-  // forwarding fresh flight coordinates, but only forward bounds when a new
-  // flight first appears.
-  const state = hass?.states?.[entityId];
-  if (!state?.attributes || !("bounds" in state.attributes)) {
-    card.hass = hass;
-    return;
-  }
-  const attributes = {...state.attributes};
-  delete attributes.bounds;
+  // The FR24 card requires bounds to render its map. Freeze them for the
+  // duration of a flight so moving aircraft updates do not continually change
+  // the requested viewport and undo a user's manual pan or zoom.
+  const attributes = {...state.attributes, bounds: owner._mapBounds};
   card.hass = {
     ...hass,
     states: {...hass.states, [entityId]: {...state, attributes}},
@@ -239,6 +236,8 @@ class PilotTrackerMapCard extends HTMLElement {
   connectedCallback() { this.render(); }
   async render() {
     if (!this._hass || !this.config) return;
+    const renderId = (this._renderId || 0) + 1;
+    this._renderId = renderId;
     const active = Number(this._hass.states[this.config.map_entity]?.state || 0) > 0;
     if (!active) {
       const flight = this._hass.states[this.config.next_flight_entity];
@@ -251,8 +250,9 @@ class PilotTrackerMapCard extends HTMLElement {
     }
     this.innerHTML = `<ha-card><div id="map"></div></ha-card>`;
     await customElements.whenDefined("flightradar24-card");
+    if (renderId !== this._renderId) return;
     const host = this.querySelector("#map");
-    if (!host || !host.isConnected) return;
+    if (!host || !host.isConnected || host.firstChild) return;
     const card = document.createElement("flightradar24-card");
     card.setConfig({entity:this.config.map_entity, show_flights:true, show_tracks:true, title:this.config.title});
     updateFlightMap(card, this._hass, this.config.map_entity, this);
