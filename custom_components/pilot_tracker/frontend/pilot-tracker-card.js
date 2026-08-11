@@ -4,6 +4,12 @@ function flightKey(hass, entityId) {
     flight?.aircraft_registration || "";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;",
+  })[character]);
+}
+
 function updateFlightMap(card, hass, entityId, owner) {
   const key = flightKey(hass, entityId);
   const isNewFlight = key !== owner._mapFlightKey;
@@ -95,6 +101,9 @@ class PilotTrackerCard extends HTMLElement {
     const status = this.state(this.config.status_entity, "unknown");
     const trip = this.state(this.config.trip_entity, "none");
     const schedules = this.attr(this.config.trip_entity, "schedules", []);
+    const selectedSchedule = schedules.find((item) => item.key === this._selectedScheduleKey)
+      || schedules.find((item) => item.selected) || schedules[0];
+    this._selectedScheduleKey = selectedSchedule?.key;
     const rejection = this.attr(this.config.tracking_entity, "last_candidate_rejection");
     const conflicts = schedules.filter((item) => item.conflicting);
     const current = this.state(this.config.current_flight_entity, "none");
@@ -125,10 +134,20 @@ class PilotTrackerCard extends HTMLElement {
           button { border:0; border-radius:18px; padding:9px 14px; cursor:pointer; color:var(--primary-text-color); background:var(--secondary-background-color); }
           button.primary { background:var(--primary-color); color:var(--text-primary-color); }
           .schedules { padding:0 20px 20px; }
-          .schedule { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid var(--divider-color); }
+          .schedule-picker { width:100%; box-sizing:border-box; margin:8px 0 12px; padding:11px; border:1px solid var(--divider-color); border-radius:10px; color:var(--primary-text-color); background:var(--card-background-color); }
+          .schedule-detail { border:1px solid var(--divider-color); border-radius:12px; overflow:hidden; }
+          .schedule-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px; background:var(--secondary-background-color); }
+          .schedule-meta { color:var(--secondary-text-color); margin-top:4px; }
+          .leg-table { overflow-x:auto; }
+          .legs { width:100%; border-collapse:collapse; }
+          .legs th,.legs td { padding:10px 8px; text-align:left; border-top:1px solid var(--divider-color); white-space:nowrap; }
+          .legs th { color:var(--secondary-text-color); font-size:11px; text-transform:uppercase; }
+          .leg-route { font-weight:600; }
+          .schedule-actions { display:flex; gap:8px; padding:12px 14px; border-top:1px solid var(--divider-color); }
+          .danger { color:var(--error-color); }
           textarea { box-sizing:border-box; width:100%; min-height:180px; padding:10px; color:var(--primary-text-color); background:var(--card-background-color); }
           dialog { width:min(680px,90vw); border:0; border-radius:14px; color:var(--primary-text-color); background:var(--card-background-color); }
-          @media(max-width:600px){ .details{grid-template-columns:1fr 1fr}.map{min-height:300px}.airport{font-size:25px} }
+          @media(max-width:600px){ .details{grid-template-columns:1fr 1fr}.map{min-height:300px}.airport{font-size:25px}.schedule-head{align-items:flex-start;flex-direction:column}.legs th:nth-child(4),.legs td:nth-child(4){display:none}.legs th,.legs td{padding:9px 5px;font-size:13px} }
         </style>
         <div class="header"><h2>${this.config.title}</h2><span class="status ${status}">${this.pretty(status)}</span></div>
         <div class="route">
@@ -152,8 +171,13 @@ class PilotTrackerCard extends HTMLElement {
           ${rejection === "aircraft_identifier_changed" ? `<button id="aircraft">Accept aircraft swap</button>` : ""}
           ${current !== "none" ? `<button id="arrival">Confirm arrival</button>` : ""}
         </div>
-        <div class="schedules"><div class="label">Loaded schedules</div>
-          ${schedules.map((item) => `<div class="schedule"><span><b>${item.trip_id}</b> · ${item.start}–${item.end} · ${item.leg_count} legs ${item.selected ? "· active" : ""}</span><span>${item.conflicting ? `<button data-keep="${item.key}">Keep this</button>` : ""}<button data-remove="${item.key}">Remove</button></span></div>`).join("") || `<div class="schedule">No schedules loaded</div>`}
+        <div class="schedules"><div class="label">Schedule manager</div>
+          ${schedules.length ? `
+            <select class="schedule-picker" id="schedule-select" aria-label="Select a loaded schedule">
+              ${schedules.map((item) => `<option value="${escapeHtml(item.key)}" ${item.key === selectedSchedule?.key ? "selected" : ""}>${escapeHtml(item.trip_id)} · ${escapeHtml(item.start)}–${escapeHtml(item.end)} · ${item.leg_count} legs${item.selected ? " · active" : ""}${item.conflicting ? " · conflict" : ""}</option>`).join("")}
+            </select>
+            ${this.scheduleDetail(selectedSchedule)}
+          ` : `<div class="schedule-head">No schedules loaded</div>`}
         </div>
         <dialog id="import-dialog"><h3>Import Southwest pairing</h3><textarea id="schedule-text" placeholder="Paste HERB TIME/ESTIMATED pairing text"></textarea><div class="actions"><button id="cancel">Cancel</button><button class="primary" id="submit">Import</button></div></dialog>
       </ha-card>`;
@@ -163,16 +187,41 @@ class PilotTrackerCard extends HTMLElement {
 
   pretty(value) { return String(value ?? "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
 
+  scheduleDetail(schedule) {
+    if (!schedule) return "";
+    return `<div class="schedule-detail">
+      <div class="schedule-head"><div><b>${escapeHtml(schedule.trip_id)}</b>${schedule.selected ? " · Active" : ""}${schedule.conflicting ? " · Conflict" : ""}<div class="schedule-meta">${escapeHtml(schedule.start)}–${escapeHtml(schedule.end)} · ${schedule.leg_count} legs · ${escapeHtml(this.pretty(schedule.time_mode))} time</div></div></div>
+      <div class="leg-table"><table class="legs"><thead><tr><th>Date</th><th>Flight</th><th>Route</th><th>Duty</th><th>Departure</th><th>Arrival</th><th>Status</th></tr></thead><tbody>
+        ${(schedule.legs || []).map((leg) => `<tr><td>${escapeHtml(this.shortDate(leg.departure))}</td><td><b>${escapeHtml(leg.flight)}</b></td><td class="leg-route">${escapeHtml(leg.origin)} → ${escapeHtml(leg.destination)}</td><td>${escapeHtml(leg.duty_period)}</td><td>${escapeHtml(leg.departure_display || this.shortTime(leg.departure))}</td><td>${escapeHtml(leg.arrival_display || this.shortTime(leg.arrival))}</td><td>${escapeHtml(this.pretty(leg.status))}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="schedule-actions">${schedule.conflicting ? `<button data-keep="${escapeHtml(schedule.key)}">Keep this schedule</button>` : ""}<button class="danger" data-remove="${escapeHtml(schedule.key)}">Delete this schedule</button></div>
+    </div>`;
+  }
+
   formatDate(value) {
     if (!value) return "Schedule unavailable";
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString([], {weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"});
   }
 
+  shortDate(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString([], {month:"short", day:"numeric"});
+  }
+
+  shortTime(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], {hour:"numeric", minute:"2-digit", timeZoneName:"short"});
+  }
+
   bind() {
     const q = (selector) => this.querySelector(selector);
     q("#import")?.addEventListener("click", () => q("#import-dialog").showModal());
     q("#cancel")?.addEventListener("click", () => q("#import-dialog").close());
+    q("#schedule-select")?.addEventListener("change", (event) => {
+      this._selectedScheduleKey = event.target.value;
+      this.render();
+    });
     q("#submit")?.addEventListener("click", async () => {
       await this._hass.callService("pilot_tracker", "import_schedule", {schedule_text:q("#schedule-text").value});
       q("#import-dialog").close();
@@ -180,7 +229,9 @@ class PilotTrackerCard extends HTMLElement {
     q("#aircraft")?.addEventListener("click", () => this.confirmCall("Accept the newly detected aircraft for this leg?", "reset_aircraft"));
     q("#arrival")?.addEventListener("click", () => this.confirmCall("Confirm that the current flight has arrived?", "complete_current_leg"));
     this.querySelectorAll("[data-remove]").forEach((button) => button.addEventListener("click", () => {
-      if (confirm("Remove this schedule?")) this._hass.callService("pilot_tracker", "remove_schedule", {trip_key:button.dataset.remove});
+      const schedule = this.attr(this.config.trip_entity, "schedules", []).find((item) => item.key === button.dataset.remove);
+      const description = schedule ? `${schedule.trip_id}, ${schedule.start}–${schedule.end}, ${schedule.leg_count} legs` : "this schedule";
+      if (confirm(`Delete ${description}? This cannot be undone.`)) this._hass.callService("pilot_tracker", "remove_schedule", {trip_key:button.dataset.remove});
     }));
     this.querySelectorAll("[data-keep]").forEach((button) => button.addEventListener("click", () => {
       if (confirm("Keep this schedule and delete the conflicting schedule(s)?")) this._hass.callService("pilot_tracker", "resolve_schedule_conflict", {keep_trip_key:button.dataset.keep});

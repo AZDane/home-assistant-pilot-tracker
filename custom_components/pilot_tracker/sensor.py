@@ -3,6 +3,7 @@
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .airports import airport_coordinates
 from .const import DOMAIN
 
 
@@ -66,6 +67,7 @@ class TrackingSourceSensor(BaseSensor):
 class TripSensor(BaseSensor):
     _attr_name = "Trip"
     _attr_unique_id = "pilot_tracker_trip"
+    _unrecorded_attributes = frozenset({"schedules"})
 
     @property
     def native_value(self):
@@ -82,33 +84,11 @@ class TripSensor(BaseSensor):
             "revision_date": trip.revision_date,
             "archived_trip_count": self.coordinator.store.archived_count,
             "loaded_trip_count": len(self.coordinator.store.trips),
-            "schedules": [
-                {
-                    "key": item.key,
-                    "trip_id": item.trip_id,
-                    "start": item.legs[0].date,
-                    "end": item.legs[-1].date,
-                    "leg_count": len(item.legs),
-                    "selected": bool(trip and item.key == trip.key),
-                    "conflicting": item.key in self.coordinator.schedule_conflicts,
-                }
-                for item in self.coordinator.store.trips
-            ],
+            "schedules": _schedule_summaries(self.coordinator, trip),
         } if trip else {
             "archived_trip_count": self.coordinator.store.archived_count,
             "loaded_trip_count": len(self.coordinator.store.trips),
-            "schedules": [
-                {
-                    "key": item.key,
-                    "trip_id": item.trip_id,
-                    "start": item.legs[0].date,
-                    "end": item.legs[-1].date,
-                    "leg_count": len(item.legs),
-                    "selected": False,
-                    "conflicting": item.key in self.coordinator.schedule_conflicts,
-                }
-                for item in self.coordinator.store.trips
-            ],
+            "schedules": _schedule_summaries(self.coordinator, None),
         })
 
 
@@ -186,7 +166,7 @@ class FlightMapSensor(BaseSensor):
     _attr_name = "Pilot Tracker flight map"
     _attr_unique_id = "pilot_tracker_flight_map"
     _attr_icon = "mdi:map-marker-path"
-    _unrecorded_attributes = frozenset({"flights"})
+    _unrecorded_attributes = frozenset({"flights", "bounds"})
 
     @property
     def native_value(self):
@@ -199,13 +179,20 @@ class FlightMapSensor(BaseSensor):
             return {"flights": [], "bounds": None}
         latitude = float(flight["latitude"])
         longitude = float(flight["longitude"])
-        # A broad, approximately square regional viewport. The FR24 card uses
-        # this boundary both for its initial zoom and its bright OSM basemap.
-        latitude_radius = 5.0
-        longitude_radius = 6.0
+        leg = self.coordinator.current_leg
+        route_points = [(latitude, longitude)]
+        if leg:
+            airports = (airport_coordinates(leg.origin), airport_coordinates(leg.destination))
+            route_points.extend(point for point in airports if point)
+        latitudes = [point[0] for point in route_points]
+        longitudes = [point[1] for point in route_points]
+        # Frame the full city pair from origin to destination. The frontend
+        # freezes these bounds for the flight, preserving manual pan and zoom.
+        latitude_padding = max(1.0, (max(latitudes) - min(latitudes)) * 0.12)
+        longitude_padding = max(1.0, (max(longitudes) - min(longitudes)) * 0.08)
         bounds = (
-            f"{latitude + latitude_radius},{latitude - latitude_radius},"
-            f"{longitude - longitude_radius},{longitude + longitude_radius}"
+            f"{max(latitudes) + latitude_padding},{min(latitudes) - latitude_padding},"
+            f"{min(longitudes) - longitude_padding},{max(longitudes) + longitude_padding}"
         )
         return {"flights": [dict(flight)], "bounds": bounds}
 
@@ -221,3 +208,35 @@ def _leg_attributes(leg):
         "duty_period": leg.duty_period,
         "qualifier": leg.qualifier,
     }
+
+
+def _schedule_summaries(coordinator, selected_trip):
+    """Return enough schedule detail for safe inspection in the admin card."""
+    return [
+        {
+            "key": trip.key,
+            "trip_id": trip.trip_id,
+            "start": trip.legs[0].date,
+            "end": trip.legs[-1].date,
+            "leg_count": len(trip.legs),
+            "selected": bool(selected_trip and trip.key == selected_trip.key),
+            "conflicting": trip.key in coordinator.schedule_conflicts,
+            "time_mode": trip.metadata.get("schedule_time_mode", "herb"),
+            "legs": [
+                {
+                    "sequence": leg.sequence,
+                    "flight": f"{leg.airline}{leg.flight_number}",
+                    "origin": leg.origin,
+                    "destination": leg.destination,
+                    "departure": leg.scheduled_departure.isoformat(),
+                    "arrival": leg.scheduled_arrival.isoformat(),
+                    "departure_display": leg.scheduled_departure.strftime("%H:%M %Z"),
+                    "arrival_display": leg.scheduled_arrival.strftime("%H:%M %Z"),
+                    "status": leg.status.value,
+                    "duty_period": leg.duty_period,
+                }
+                for leg in trip.legs
+            ],
+        }
+        for trip in coordinator.store.trips
+    ]
