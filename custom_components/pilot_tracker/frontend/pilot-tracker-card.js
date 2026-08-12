@@ -64,9 +64,16 @@ class PilotTrackerLiveMap extends HTMLElement {
       this._map = L.map(this.querySelector(".pilot-map-canvas"), {zoomControl:true}).setView([39, -98], 4);
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom:18,
+        keepBuffer:4,
+        updateWhenIdle:false,
         attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(this._map);
       this._track = L.polyline([], {color:"#ff8a00", weight:5, opacity:.9}).addTo(this._map);
+      this._resizeObserver = new ResizeObserver(() => {
+        if (this._map && this.offsetParent !== null) this._map.invalidateSize({pan:false});
+      });
+      this._resizeObserver.observe(this);
+      requestAnimationFrame(() => this._map?.invalidateSize({pan:false}));
       this.updateMap();
     } catch (error) {
       const canvas = this.querySelector(".pilot-map-canvas");
@@ -107,6 +114,7 @@ class PilotTrackerLiveMap extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._resizeObserver?.disconnect();
     if (this._map) this._map.remove();
     this._map = null;
   }
@@ -172,6 +180,7 @@ class PilotTrackerCard extends HTMLElement {
       const state = this._hass.states[id];
       if (!state) return null;
       return [state.state, state.attributes.schedules, state.attributes.last_candidate_rejection,
+        state.attributes.last_candidate_rejection_detail,
         state.attributes.tracked_flights, state.attributes.position_fresh,
         state.attributes.scheduled_departure, state.attributes.scheduled_arrival];
     }));
@@ -186,6 +195,7 @@ class PilotTrackerCard extends HTMLElement {
       || schedules.find((item) => item.selected) || schedules[0];
     this._selectedScheduleKey = selectedSchedule?.key;
     const rejection = this.attr(this.config.tracking_entity, "last_candidate_rejection");
+    const rejectionDetail = this.attr(this.config.tracking_entity, "last_candidate_rejection_detail");
     const conflicts = schedules.filter((item) => item.conflicting);
     const current = this.state(this.config.current_flight_entity, "none");
     const next = this.state(this.config.next_flight_entity, "none");
@@ -236,9 +246,9 @@ class PilotTrackerCard extends HTMLElement {
           <div class="flight"><ha-icon icon="mdi:airplane"></ha-icon><br>${current}</div>
           <div class="airport">${this.state(this.config.current_destination_entity)}</div>
         </div>
-        ${rejection ? `<div class="alert"><b>Attention:</b> ${this.pretty(rejection)}</div>` : ""}
+        ${rejection ? `<div class="alert"><b>Attention:</b> ${this.rejectionText(rejection, rejectionDetail)}</div>` : ""}
         ${conflicts.length ? `<div class="alert"><b>Schedule conflict:</b> Choose the pairing to keep below.</div>` : ""}
-        ${hasFlight ? `<div class="map" id="pilot-map"></div>` : `<div class="next-panel"><div class="label">Next scheduled flight</div><div class="next-route">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div><div>${next} · ${this.formatDate(nextDeparture)}</div></div>`}
+        ${hasFlight ? `<div class="map" id="pilot-map"></div>` : this.nextFlightPanel(next)}
         <div class="details">
           <div><div class="label">Trip</div><div class="value">${trip}</div></div>
           <div><div class="label">Current flight</div><div class="value">${current}</div></div>
@@ -246,6 +256,10 @@ class PilotTrackerCard extends HTMLElement {
           <div><div class="label">Next route</div><div class="value">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div></div>
           <div><div class="label">Tracked flights</div><div class="value">${this.attr(this.config.tracking_entity,"tracked_flights",0)}</div></div>
           <div><div class="label">Position</div><div class="value">${this.attr(this.config.tracking_entity,"position_fresh",false) ? "Live" : "Waiting"}</div></div>
+          <div><div class="label">Current departure · Domicile</div><div class="value">${escapeHtml(this.attr(this.config.current_flight_entity,"departure_domicile_display","—"))}</div></div>
+          <div><div class="label">Current departure · Local</div><div class="value">${escapeHtml(this.attr(this.config.current_flight_entity,"departure_local_display","—"))}</div></div>
+          <div><div class="label">Next departure · Domicile</div><div class="value">${escapeHtml(this.attr(this.config.next_flight_entity,"departure_domicile_display","—"))}</div></div>
+          <div><div class="label">Next departure · Local</div><div class="value">${escapeHtml(this.attr(this.config.next_flight_entity,"departure_local_display","—"))}</div></div>
         </div>
         <div class="actions">
           <button class="primary" id="import">Import schedule</button>
@@ -269,12 +283,29 @@ class PilotTrackerCard extends HTMLElement {
 
   pretty(value) { return String(value ?? "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
 
+  rejectionText(rejection, detail) {
+    if (rejection === "origin_mismatch" && detail) {
+      return `Origin mismatch for ${escapeHtml(detail.flight)}: expected ${escapeHtml(detail.expected_origin)}, FlightRadar24 returned ${escapeHtml(detail.received_origin || "unknown")}.`;
+    }
+    if (rejection === "destination_mismatch" && detail) {
+      return `Destination mismatch for ${escapeHtml(detail.flight)}: expected ${escapeHtml(detail.expected_destination)}, FlightRadar24 returned ${escapeHtml(detail.received_destination || "unknown")}.`;
+    }
+    return escapeHtml(this.pretty(rejection));
+  }
+
+  nextFlightPanel(next) {
+    const attributes = this._hass.states[this.config.next_flight_entity]?.attributes || {};
+    const domicile = attributes.departure_domicile_display || "Schedule unavailable";
+    const local = attributes.departure_local_display || "Schedule unavailable";
+    return `<div class="next-panel"><div class="label">Next scheduled flight</div><div class="next-route">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div><div>${next}</div><div style="margin-top:10px"><b>Domicile:</b> ${escapeHtml(domicile)}</div><div><b>Local:</b> ${escapeHtml(local)}</div></div>`;
+  }
+
   scheduleDetail(schedule) {
     if (!schedule) return "";
     return `<div class="schedule-detail">
       <div class="schedule-head"><div><b>${escapeHtml(schedule.trip_id)}</b>${schedule.selected ? " · Active" : ""}${schedule.conflicting ? " · Conflict" : ""}<div class="schedule-meta">${escapeHtml(schedule.start)}–${escapeHtml(schedule.end)} · ${schedule.leg_count} legs · ${escapeHtml(this.pretty(schedule.time_mode))} time</div></div></div>
       <div class="leg-table"><table class="legs"><thead><tr><th>Date</th><th>Flight</th><th>Route</th><th>Duty</th><th>Departure</th><th>Arrival</th><th>Status</th></tr></thead><tbody>
-        ${(schedule.legs || []).map((leg) => `<tr><td>${escapeHtml(this.shortDate(leg.departure))}</td><td><b>${escapeHtml(leg.flight)}</b></td><td class="leg-route">${escapeHtml(leg.origin)} → ${escapeHtml(leg.destination)}</td><td>${escapeHtml(leg.duty_period)}</td><td>${escapeHtml(leg.departure_display || this.shortTime(leg.departure))}</td><td>${escapeHtml(leg.arrival_display || this.shortTime(leg.arrival))}</td><td>${escapeHtml(this.pretty(leg.status))}</td></tr>`).join("")}
+        ${(schedule.legs || []).map((leg) => `<tr><td>${escapeHtml(this.shortDate(leg.departure))}</td><td><b>${escapeHtml(leg.flight)}</b></td><td class="leg-route">${escapeHtml(leg.origin)} → ${escapeHtml(leg.destination)}</td><td>${escapeHtml(leg.duty_period)}</td><td><b>Dom:</b> ${escapeHtml(leg.departure_domicile_display)}<br><b>Local:</b> ${escapeHtml(leg.departure_local_display)}</td><td><b>Dom:</b> ${escapeHtml(leg.arrival_domicile_display)}<br><b>Local:</b> ${escapeHtml(leg.arrival_local_display)}</td><td>${escapeHtml(this.pretty(leg.status))}</td></tr>`).join("")}
       </tbody></table></div>
       <div class="schedule-actions">${schedule.conflicting ? `<button data-keep="${escapeHtml(schedule.key)}">Keep this schedule</button>` : ""}<button class="danger" data-remove="${escapeHtml(schedule.key)}">Delete this schedule</button></div>
     </div>`;
@@ -377,9 +408,9 @@ class PilotTrackerMapCard extends HTMLElement {
       const flight = this._hass.states[this.config.next_flight_entity];
       const origin = this._hass.states[this.config.next_origin_entity]?.state || "—";
       const destination = this._hass.states[this.config.next_destination_entity]?.state || "—";
-      const raw = flight?.attributes?.scheduled_departure;
-      const departure = raw ? new Date(raw).toLocaleString([], {weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) : "Schedule unavailable";
-      this.innerHTML = `<ha-card><style>.wrap{padding:28px;text-align:center}.label{color:var(--secondary-text-color);text-transform:uppercase;font-size:12px}.route{font-size:34px;font-weight:700;margin:10px}.flight{font-size:17px}</style><div class="wrap"><div class="label">Next scheduled flight</div><div class="route">${origin} → ${destination}</div><div class="flight">${flight?.state || "—"} · ${departure}</div></div></ha-card>`;
+      const domicile = flight?.attributes?.departure_domicile_display || "Schedule unavailable";
+      const local = flight?.attributes?.departure_local_display || "Schedule unavailable";
+      this.innerHTML = `<ha-card><style>.wrap{padding:28px;text-align:center}.label{color:var(--secondary-text-color);text-transform:uppercase;font-size:12px}.route{font-size:34px;font-weight:700;margin:10px}.flight{font-size:17px}.times{margin-top:10px;line-height:1.55}</style><div class="wrap"><div class="label">Next scheduled flight</div><div class="route">${escapeHtml(origin)} → ${escapeHtml(destination)}</div><div class="flight">${escapeHtml(flight?.state || "—")}</div><div class="times"><b>Domicile:</b> ${escapeHtml(domicile)}<br><b>Local:</b> ${escapeHtml(local)}</div></div></ha-card>`;
       return;
     }
     this.innerHTML = `<ha-card><div id="map"></div></ha-card>`;

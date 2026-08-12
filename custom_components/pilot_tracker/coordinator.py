@@ -40,6 +40,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.accepted_flight: dict | None = None
         self.flight_path: list[tuple[float, float]] = []
         self.last_rejection: str | None = None
+        self.last_rejection_detail: dict | None = None
         self._unsub_interval = None
         self._accepted_updated_at = 0.0
         self._last_tracking_request_at = 0.0
@@ -127,6 +128,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
 
         accepted = None
         self.last_rejection = None
+        self.last_rejection_detail = None
         for candidate in self.tracking.flights:
             result = validate_candidate(leg, candidate)
             if result.accepted:
@@ -135,6 +137,13 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             if normalize := candidate.get("flight_number"):
                 if leg.flight_number in str(normalize):
                     self.last_rejection = result.reason
+                    self.last_rejection_detail = {
+                        "flight": f"{leg.airline}{leg.flight_number}",
+                        "expected_origin": leg.origin,
+                        "received_origin": candidate.get("airport_origin_code_iata"),
+                        "expected_destination": leg.destination,
+                        "received_destination": candidate.get("airport_destination_code_iata"),
+                    }
         if accepted is None:
             self.accepted_flight = None
             self.async_set_updated_data(None)

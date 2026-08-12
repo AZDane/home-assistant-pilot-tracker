@@ -1,8 +1,11 @@
 """Pilot Tracker status sensors."""
 
+from zoneinfo import ZoneInfo
+
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .airports import airport_timezone
 from .const import DOMAIN
 
 
@@ -59,6 +62,7 @@ class TrackingSourceSensor(BaseSensor):
             "fr24_config_entry_id": entities.config_entry_id if entities else None,
             "last_event": adapter.last_event,
             "last_candidate_rejection": self.coordinator.last_rejection,
+            "last_candidate_rejection_detail": self.coordinator.last_rejection_detail,
             "position_fresh": self.coordinator.tracking_position_fresh,
         }
 
@@ -102,7 +106,7 @@ class CurrentFlightSensor(BaseSensor):
 
     @property
     def extra_state_attributes(self):
-        return _leg_attributes(self.coordinator.current_leg)
+        return _leg_attributes(self.coordinator.current_leg, self.coordinator.trip)
 
 
 class NextFlightSensor(BaseSensor):
@@ -116,7 +120,7 @@ class NextFlightSensor(BaseSensor):
 
     @property
     def extra_state_attributes(self):
-        return _leg_attributes(self.coordinator.next_leg)
+        return _leg_attributes(self.coordinator.next_leg, self.coordinator.trip)
 
 
 class CurrentOriginSensor(BaseSensor):
@@ -191,9 +195,10 @@ class FlightMapSensor(BaseSensor):
         return {"flights": [mapped_flight], "bounds": bounds}
 
 
-def _leg_attributes(leg):
+def _leg_attributes(leg, trip=None):
     if leg is None:
         return {}
+    displays = _leg_time_displays(leg, trip)
     return {
         "origin": leg.origin,
         "destination": leg.destination,
@@ -201,6 +206,27 @@ def _leg_attributes(leg):
         "scheduled_arrival": leg.scheduled_arrival.isoformat(),
         "duty_period": leg.duty_period,
         "qualifier": leg.qualifier,
+        **displays,
+    }
+
+
+def _leg_time_displays(leg, trip):
+    """Return explicitly labeled domicile and airport-local schedule times."""
+    domicile = (trip.metadata.get("domicile_airport") if trip else None) or leg.origin
+    domicile_zone = ZoneInfo(airport_timezone(domicile))
+    origin_zone = ZoneInfo(airport_timezone(leg.origin))
+    destination_zone = ZoneInfo(airport_timezone(leg.destination))
+    display_format = "%a %b %-d, %-I:%M %p %Z"
+    return {
+        "domicile_airport": domicile,
+        "departure_domicile": leg.scheduled_departure.astimezone(domicile_zone).isoformat(),
+        "arrival_domicile": leg.scheduled_arrival.astimezone(domicile_zone).isoformat(),
+        "departure_local": leg.scheduled_departure.astimezone(origin_zone).isoformat(),
+        "arrival_local": leg.scheduled_arrival.astimezone(destination_zone).isoformat(),
+        "departure_domicile_display": leg.scheduled_departure.astimezone(domicile_zone).strftime(display_format),
+        "arrival_domicile_display": leg.scheduled_arrival.astimezone(domicile_zone).strftime(display_format),
+        "departure_local_display": leg.scheduled_departure.astimezone(origin_zone).strftime(display_format),
+        "arrival_local_display": leg.scheduled_arrival.astimezone(destination_zone).strftime(display_format),
     }
 
 
@@ -226,6 +252,7 @@ def _schedule_summaries(coordinator, selected_trip):
                     "arrival": leg.scheduled_arrival.isoformat(),
                     "departure_display": leg.scheduled_departure.strftime("%H:%M %Z"),
                     "arrival_display": leg.scheduled_arrival.strftime("%H:%M %Z"),
+                    **_leg_time_displays(leg, trip),
                     "status": leg.status.value,
                     "duty_period": leg.duty_period,
                 }
