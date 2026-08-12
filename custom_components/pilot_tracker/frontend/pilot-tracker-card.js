@@ -1,37 +1,118 @@
-function flightKey(hass, entityId) {
-  const flight = hass?.states?.[entityId]?.attributes?.flights?.[0];
-  return flight?.flight_number || flight?.callsign || flight?.id ||
-    flight?.aircraft_registration || "";
-}
-
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({
     "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;",
   })[character]);
 }
 
-function updateFlightMap(card, hass, entityId, owner) {
-  const key = flightKey(hass, entityId);
-  const isNewFlight = key !== owner._mapFlightKey;
-  const state = hass?.states?.[entityId];
-  if (isNewFlight) {
-    owner._mapFlightKey = key;
-    owner._mapBounds = state?.attributes?.bounds;
-  }
-  if (!state?.attributes || !owner._mapBounds) {
-    card.hass = hass;
-    return;
+function loadPilotLeaflet() {
+  if (window.PilotTrackerLeaflet) return Promise.resolve(window.PilotTrackerLeaflet);
+  if (window.PilotTrackerLeafletPromise) return window.PilotTrackerLeafletPromise;
+  window.PilotTrackerLeafletPromise = new Promise((resolve, reject) => {
+    if (!document.querySelector("link[data-pilot-leaflet]")) {
+      const stylesheet = document.createElement("link");
+      stylesheet.rel = "stylesheet";
+      stylesheet.href = "/pilot_tracker_frontend/leaflet.css";
+      stylesheet.dataset.pilotLeaflet = "";
+      document.head.appendChild(stylesheet);
+    }
+    const script = document.createElement("script");
+    script.src = "/pilot_tracker_frontend/leaflet.js";
+    script.dataset.pilotLeaflet = "";
+    script.onload = () => {
+      window.PilotTrackerLeaflet = window.L.noConflict();
+      resolve(window.PilotTrackerLeaflet);
+    };
+    script.onerror = () => reject(new Error("Pilot Tracker map library failed to load"));
+    document.head.appendChild(script);
+  });
+  return window.PilotTrackerLeafletPromise;
+}
+
+class PilotTrackerLiveMap extends HTMLElement {
+  setConfig(config) {
+    this.config = {entity:"sensor.pilot_tracker_flight_map", title:"Pilot", height:420, ...config};
+    this.renderShell();
   }
 
-  // The FR24 card requires bounds to render its map. Freeze them for the
-  // duration of a flight so moving aircraft updates do not continually change
-  // the requested viewport and undo a user's manual pan or zoom.
-  const attributes = {...state.attributes, bounds: owner._mapBounds};
-  card.hass = {
-    ...hass,
-    states: {...hass.states, [entityId]: {...state, attributes}},
-  };
+  set hass(hass) {
+    this._hass = hass;
+    this.updateMap();
+  }
+
+  connectedCallback() { this.renderShell(); this.initializeMap(); }
+
+  renderShell() {
+    if (!this.config || this.querySelector(".pilot-map-canvas")) return;
+    this.innerHTML = `<style>
+      pilot-tracker-live-map{display:block} .pilot-live-shell{overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#fff))}
+      .pilot-live-title{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;font-size:21px;font-weight:600}
+      .pilot-live-count{color:var(--secondary-text-color);font-size:15px;font-weight:400}.pilot-map-canvas{height:${Number(this.config.height) || 420}px;background:#dbe8cf}
+      .pilot-plane{width:42px;height:42px;filter:drop-shadow(0 2px 2px #0008)}.pilot-plane svg{fill:#049bd3;stroke:#fff;stroke-width:.5}
+      .pilot-live-info{padding:14px 18px;border-top:1px solid var(--divider-color)}.pilot-live-flight{font-size:21px;font-weight:700}
+      .pilot-live-route{margin-top:6px;color:var(--secondary-text-color);font-size:16px}.pilot-live-stats{margin-top:7px;color:var(--secondary-text-color);font-size:14px}
+    </style><div class="pilot-live-shell"><div class="pilot-live-title"><span>${escapeHtml(this.config.title)}</span><span class="pilot-live-count">1 tracked</span></div><div class="pilot-map-canvas"></div><div class="pilot-live-info"></div></div>`;
+    this.initializeMap();
+  }
+
+  async initializeMap() {
+    if (this._map || this._initializing) return;
+    this._initializing = true;
+    try {
+      const L = await loadPilotLeaflet();
+      if (!this.isConnected || !this.querySelector(".pilot-map-canvas")) return;
+      this._L = L;
+      this._map = L.map(this.querySelector(".pilot-map-canvas"), {zoomControl:true}).setView([39, -98], 4);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom:18,
+        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(this._map);
+      this._track = L.polyline([], {color:"#ff8a00", weight:5, opacity:.9}).addTo(this._map);
+      this.updateMap();
+    } catch (error) {
+      const canvas = this.querySelector(".pilot-map-canvas");
+      if (canvas) canvas.textContent = error.message;
+    } finally {
+      this._initializing = false;
+    }
+  }
+
+  updateMap() {
+    if (!this._hass || !this.config) return;
+    if (!this._map) { this.renderShell(); this.initializeMap(); return; }
+    const state = this._hass.states[this.config.entity];
+    const flight = state?.attributes?.flights?.[0];
+    if (!flight || flight.latitude == null || flight.longitude == null) return;
+    const latitude = Number(flight.latitude);
+    const longitude = Number(flight.longitude);
+    const heading = Number(flight.heading ?? flight.track ?? 0);
+    const key = flight.flight_number || flight.callsign || flight.id || flight.aircraft_registration || "flight";
+    const icon = this._L.divIcon({className:"", iconSize:[42,42], iconAnchor:[21,21], html:`<div class="pilot-plane" style="transform:rotate(${heading}deg)"><svg viewBox="0 0 24 24"><path d="M21,16V14L13,9V3.5C13,2.67 12.33,2 11.5,2S10,2.67 10,3.5V9L2,14V16L10,13.5V19L8,20.5V22L11.5,21L15,22V20.5L13,19V13.5L21,16Z"/></svg></div>`});
+    if (!this._marker) this._marker = this._L.marker([latitude, longitude], {icon}).addTo(this._map);
+    else { this._marker.setLatLng([latitude, longitude]); this._marker.setIcon(icon); }
+    const points = Array.isArray(flight.pilot_track) ? flight.pilot_track.filter(point => Array.isArray(point) && point.length >= 2) : [];
+    this._track.setLatLngs(points);
+    if (this._flightKey !== key) {
+      this._flightKey = key;
+      const bounds = String(state.attributes.bounds || "").split(",").map(Number);
+      if (bounds.length === 4 && bounds.every(Number.isFinite)) this._map.fitBounds([[bounds[1],bounds[2]],[bounds[0],bounds[3]]]);
+      else this._map.setView([latitude, longitude], 6);
+    }
+    const flightNumber = flight.flight_number || flight.callsign || key;
+    const origin = flight.airport_origin_code_iata || flight.origin || "—";
+    const destination = flight.airport_destination_code_iata || flight.destination || "—";
+    const speed = flight.ground_speed != null ? `${Math.round(Number(flight.ground_speed))} kts` : "";
+    const altitude = flight.altitude != null ? `${Math.round(Number(flight.altitude))} ft` : "";
+    const info = this.querySelector(".pilot-live-info");
+    if (info) info.innerHTML = `<div class="pilot-live-flight">✈ ${escapeHtml(flightNumber)}</div><div class="pilot-live-route">${escapeHtml(origin)} → ${escapeHtml(destination)}</div><div class="pilot-live-stats">${escapeHtml([speed, altitude].filter(Boolean).join(" · "))}</div>`;
+  }
+
+  disconnectedCallback() {
+    if (this._map) this._map.remove();
+    this._map = null;
+  }
 }
+
+customElements.define("pilot-tracker-live-map", PilotTrackerLiveMap);
 
 class PilotTrackerCard extends HTMLElement {
   setConfig(config) {
@@ -56,8 +137,8 @@ class PilotTrackerCard extends HTMLElement {
     this._hass = hass;
     const signature = this.uiSignature();
     if (this._uiSignature === signature && this.querySelector("ha-card")) {
-      const map = this.querySelector("flightradar24-card");
-      if (map) updateFlightMap(map, hass, this.config.map_entity, this);
+      const map = this.querySelector("pilot-tracker-live-map");
+      if (map) map.hass = hass;
       return;
     }
     this._uiSignature = signature;
@@ -246,14 +327,12 @@ class PilotTrackerCard extends HTMLElement {
 
   confirmCall(message, service) { if (confirm(message)) this._hass.callService("pilot_tracker", service, {}); }
 
-  async renderMap() {
+  renderMap() {
     const host = this.querySelector("#pilot-map");
-    if (!host) return;
-    await customElements.whenDefined("flightradar24-card");
-    if (!host.isConnected || host.firstChild) return;
-    const card = document.createElement("flightradar24-card");
-    card.setConfig({entity:this.config.map_entity, show_flights:true, show_tracks:true, title:"Live aircraft"});
-    updateFlightMap(card, this._hass, this.config.map_entity, this);
+    if (!host || !host.isConnected || host.firstChild) return;
+    const card = document.createElement("pilot-tracker-live-map");
+    card.setConfig({entity:this.config.map_entity, title:"Live aircraft", height:360});
+    card.hass = this._hass;
     host.appendChild(card);
   }
 }
@@ -279,8 +358,8 @@ class PilotTrackerMapCard extends HTMLElement {
     const nextState = hass.states[this.config.next_flight_entity];
     const signature = JSON.stringify([mapState, nextState?.state, nextState?.attributes?.scheduled_departure,
       hass.states[this.config.next_origin_entity]?.state, hass.states[this.config.next_destination_entity]?.state]);
-    if (this._signature === signature && this.querySelector("flightradar24-card")) {
-      updateFlightMap(this.querySelector("flightradar24-card"), hass, this.config.map_entity, this);
+    if (this._signature === signature && this.querySelector("pilot-tracker-live-map")) {
+      this.querySelector("pilot-tracker-live-map").hass = hass;
       return;
     }
     this._signature = signature;
@@ -291,10 +370,8 @@ class PilotTrackerMapCard extends HTMLElement {
     return {columns: 12, min_columns: 6, rows: 8, min_rows: 4};
   }
   connectedCallback() { this.render(); }
-  async render() {
+  render() {
     if (!this._hass || !this.config) return;
-    const renderId = (this._renderId || 0) + 1;
-    this._renderId = renderId;
     const active = Number(this._hass.states[this.config.map_entity]?.state || 0) > 0;
     if (!active) {
       const flight = this._hass.states[this.config.next_flight_entity];
@@ -306,13 +383,11 @@ class PilotTrackerMapCard extends HTMLElement {
       return;
     }
     this.innerHTML = `<ha-card><div id="map"></div></ha-card>`;
-    await customElements.whenDefined("flightradar24-card");
-    if (renderId !== this._renderId) return;
     const host = this.querySelector("#map");
     if (!host || !host.isConnected || host.firstChild) return;
-    const card = document.createElement("flightradar24-card");
-    card.setConfig({entity:this.config.map_entity, show_flights:true, show_tracks:true, title:this.config.title});
-    updateFlightMap(card, this._hass, this.config.map_entity, this);
+    const card = document.createElement("pilot-tracker-live-map");
+    card.setConfig({entity:this.config.map_entity, title:this.config.title, height:this.config.height || 420});
+    card.hass = this._hass;
     host.appendChild(card);
   }
 }

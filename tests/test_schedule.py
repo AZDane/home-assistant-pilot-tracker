@@ -4,7 +4,7 @@ import pytest
 
 from custom_components.pilot_tracker.models import LegStatus
 from custom_components.pilot_tracker.providers.southwest import SouthwestPairingProvider
-from custom_components.pilot_tracker.schedule import ScheduleConflictError, merge_trip
+from custom_components.pilot_tracker.schedule import ScheduleConflictError, merge_trip, select_pending_leg
 from tests.test_southwest import SAMPLE
 
 
@@ -48,3 +48,17 @@ def test_revision_drops_stale_pending_current_leg_pointer():
     imported = trip()
     merged = merge_trip(existing, imported)
     assert merged.current_leg_sequence is None
+
+
+def test_mid_duty_selection_skips_finished_legs():
+    trip = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    now = trip.legs[2].scheduled_departure + timedelta(minutes=5)
+
+    assert select_pending_leg(trip, now) == trip.legs[2]
+
+
+def test_between_legs_selection_chooses_next_future_leg():
+    trip = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    now = trip.legs[0].scheduled_arrival + timedelta(hours=2)
+
+    assert select_pending_leg(trip, now) == trip.legs[1]

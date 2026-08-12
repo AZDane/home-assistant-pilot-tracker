@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from .models import LegStatus, Trip, TripStatus
+from .models import FlightLeg, LegStatus, Trip, TripStatus
 
 
 class ScheduleConflictError(ValueError):
@@ -52,6 +52,19 @@ def trips_overlap(first: Trip, second: Trip) -> bool:
         and right.scheduled_departure < left.scheduled_arrival
         for left in first.legs for right in second.legs
     )
+
+
+def select_pending_leg(trip: Trip, now: datetime) -> FlightLeg | None:
+    """Select the operating leg, or otherwise the earliest future leg."""
+    pending = [leg for leg in trip.legs if leg.status == LegStatus.PENDING]
+    operating = [
+        leg for leg in pending
+        if leg.scheduled_departure <= now <= leg.scheduled_arrival + timedelta(hours=1)
+    ]
+    if operating:
+        return max(operating, key=lambda leg: leg.scheduled_departure)
+    future = [leg for leg in pending if leg.scheduled_departure > now]
+    return min(future, key=lambda leg: leg.scheduled_departure) if future else None
 
 
 def merge_trip(existing: Trip | None, imported: Trip) -> Trip:

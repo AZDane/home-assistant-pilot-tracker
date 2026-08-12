@@ -13,6 +13,8 @@ position and schedule as Home Assistant entities and dashboard cards.
 - Exposes current and next flight, route, status, diagnostics, and
   `device_tracker.pilot` entities.
 - Includes full Pilot Tracker and map-only dashboard cards.
+- Uses a self-contained bright map with a heading-aware aircraft marker and
+  live breadcrumb trail.
 - Preserves a manually selected map zoom during position updates.
 
 ## Schedule time modes
@@ -35,7 +37,12 @@ using the wrong time zone.
 - The
   [FlightRadar24 custom integration](https://github.com/AlexandrErohin/home-assistant-flightradar24)
   configured in Home Assistant.
-- The FlightRadar24 dashboard card if the included map cards will be used.
+
+Pilot Tracker does not require the separately published
+`home-assistant-flightradar24-card` HACS frontend repository. The FlightRadar24
+integration already bundles its own card with the same custom-element name, so
+installing both FlightRadar24 card implementations can cause a duplicate
+registration error in the browser.
 
 ## Install with HACS
 

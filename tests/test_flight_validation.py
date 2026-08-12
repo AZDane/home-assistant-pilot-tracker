@@ -23,6 +23,15 @@ def test_accepts_fully_matching_live_candidate():
     assert validate_candidate(leg, candidate(leg)).accepted
 
 
+def test_accepts_southwest_icao_when_iata_is_missing():
+    leg = SouthwestPairingProvider().parse(SAMPLE, year=2026).legs[0]
+    flight = candidate(leg)
+    flight["airline_iata"] = None
+    flight["airline_icao"] = "SWA"
+
+    assert validate_candidate(leg, flight).accepted
+
+
 def test_rejects_reused_number_on_wrong_day():
     leg = SouthwestPairingProvider().parse(SAMPLE, year=2026).legs[0]
     flight = candidate(leg)

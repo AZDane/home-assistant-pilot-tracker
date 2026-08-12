@@ -17,14 +17,29 @@ class CandidateResult:
 
 def normalize_flight_number(value: Any) -> str:
     text = str(value or "").upper().replace(" ", "")
-    return text[2:] if text.startswith("WN") else text
+    for prefix in ("SWA", "WN"):
+        if text.startswith(prefix):
+            return text[len(prefix):]
+    return text
+
+
+def normalize_airline(flight: dict[str, Any]) -> str:
+    """Normalize IATA/ICAO/name variants exposed by FlightRadar24."""
+    values = (
+        flight.get("airline_iata"), flight.get("airline_icao"),
+        flight.get("airline_name"), flight.get("flight_number"), flight.get("callsign"),
+    )
+    tokens = {str(value or "").upper().replace(" ", "") for value in values}
+    if any(token == "WN" or token == "SWA" or token.startswith(("WN", "SWA", "SOUTHWEST")) for token in tokens):
+        return "WN"
+    return str(flight.get("airline_iata") or flight.get("airline_icao") or "").upper()
 
 
 def validate_candidate(leg: FlightLeg, flight: dict[str, Any]) -> CandidateResult:
     """Require flight, airline, route, live state, and departure-date agreement."""
     if normalize_flight_number(flight.get("flight_number")) != leg.flight_number:
         return CandidateResult(False, "flight_number_mismatch")
-    airline = str(flight.get("airline_iata") or "").upper()
+    airline = normalize_airline(flight)
     if airline != leg.airline:
         return CandidateResult(False, "airline_mismatch")
     if str(flight.get("airport_origin_code_iata") or "").upper() != leg.origin:

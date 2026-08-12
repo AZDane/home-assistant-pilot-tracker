@@ -186,7 +186,9 @@ class FlightMapSensor(BaseSensor):
             f"{latitude + latitude_radius},{latitude - latitude_radius},"
             f"{longitude - longitude_radius},{longitude + longitude_radius}"
         )
-        return {"flights": [dict(flight)], "bounds": bounds}
+        mapped_flight = dict(flight)
+        mapped_flight["pilot_track"] = [list(point) for point in self.coordinator.flight_path]
+        return {"flights": [mapped_flight], "bounds": bounds}
 
 
 def _leg_attributes(leg):

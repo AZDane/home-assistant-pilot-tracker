@@ -14,7 +14,10 @@ from .models import FlightLeg, LegStatus, Trip, TripStatus
 from .flight_validation import validate_candidate
 from .arrival import arrival_signals, event_matches_flight
 from .providers.southwest import SouthwestPairingProvider
-from .schedule import merge_trip, overlapping_trip_keys, trips_overlap, validate_collection_horizon, validate_leg_order
+from .schedule import (
+    merge_trip, overlapping_trip_keys, select_pending_leg, trips_overlap,
+    validate_collection_horizon, validate_leg_order,
+)
 from .state_machine import PilotTrackerState
 from .storage import TripStore
 from .tracking.flightradar24 import FlightRadar24Adapter, FlightRadar24NotReady
@@ -35,6 +38,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.tracking = FlightRadar24Adapter(hass)
         self.tracking_error: str | None = None
         self.accepted_flight: dict | None = None
+        self.flight_path: list[tuple[float, float]] = []
         self.last_rejection: str | None = None
         self._unsub_interval = None
         self._accepted_updated_at = 0.0
@@ -148,6 +152,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
                 self.async_set_updated_data(None)
                 return
         self.accepted_flight = accepted
+        self._remember_position(accepted)
         self._accepted_updated_at = monotonic()
         if leg.status == LegStatus.ACTIVE and leg.tracking_identifiers:
             self.state = PilotTrackerState.TRACKING_FLIGHT
@@ -169,19 +174,15 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
 
     def _select_duty_start(self) -> FlightLeg | None:
         now = datetime.now(tz=self.trip.legs[0].scheduled_departure.tzinfo)
-        starts = [leg for leg in self.trip.legs if self._is_duty_start(leg) and leg.status == LegStatus.PENDING]
-        eligible = []
-        for leg in starts:
-            duty_end = max(
-                item.scheduled_arrival for item in self.trip.legs if item.duty_period == leg.duty_period
-            )
-            if now <= duty_end + timedelta(hours=4):
-                eligible.append(leg)
-        if not eligible:
+        # When a schedule is imported or HA restarts mid-duty, select the most
+        # recently departed leg that can still be operating. If no leg is in
+        # that window, wait for the earliest future leg. This prevents pinning
+        # tracking to the duty's already-finished first leg.
+        selected = select_pending_leg(self.trip, now)
+        if selected is None:
             self.last_rejection = None
             self.state = PilotTrackerState.TRIP_COMPLETE
             return None
-        selected = eligible[0]
         if now >= selected.scheduled_departure - RESOLVE_BEFORE:
             for leg in self.trip.legs:
                 if leg.sequence < selected.sequence and leg.status == LegStatus.PENDING:
@@ -197,6 +198,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         )), None)
         if candidate:
             self.accepted_flight = candidate
+            self._remember_position(candidate)
             self._accepted_updated_at = monotonic()
         else:
             replacement = next((flight for flight in self.tracking.flights
@@ -256,6 +258,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         if identifier:
             await self.tracking.async_stop(identifier)
         self.accepted_flight = None
+        self.flight_path = []
         next_leg = next((item for item in self.trip.legs if item.sequence > leg.sequence), None)
         if next_leg is None:
             self.trip.current_leg_sequence = None
@@ -283,6 +286,15 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             self.accepted_flight
             and monotonic() - self._accepted_updated_at <= TRACKING_STALE_SECONDS
         )
+
+    def _remember_position(self, flight: dict) -> None:
+        """Keep a bounded in-memory breadcrumb trail for the independent map."""
+        if flight.get("latitude") is None or flight.get("longitude") is None:
+            return
+        point = (float(flight["latitude"]), float(flight["longitude"]))
+        if not self.flight_path or self.flight_path[-1] != point:
+            self.flight_path.append(point)
+            self.flight_path = self.flight_path[-1000:]
 
     async def async_import_schedule(self, text: str) -> Trip:
         imported = SouthwestPairingProvider().parse(text)
@@ -408,6 +420,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.trip.metadata.pop("arrival_evidence", None)
         self.trip.metadata.pop("ground_near_samples", None)
         self.accepted_flight = None
+        self.flight_path = []
         self.last_rejection = None
         self.state = PilotTrackerState.RESOLVING_FLIGHT
         await self.store.async_save(self.trip)
