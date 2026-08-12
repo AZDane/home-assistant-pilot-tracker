@@ -409,6 +409,11 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
     def next_leg(self) -> FlightLeg | None:
         if not self.trip:
             return None
+        pointed = self.trip.current_leg
+        # Completion advances the pointer to the following pending leg. That
+        # leg is the next flight; searching only after the pointer skips it.
+        if pointed and pointed.status == LegStatus.PENDING:
+            return pointed
         current = self.trip.current_leg_sequence or 0
         candidates = [
             leg for leg in self.trip.legs
