@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, EVENT_HOMEASSISTANT_STARTED, HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
+from .airports import load_airports
 from .const import DOMAIN, PLATFORMS
 from .coordinator import PilotTrackerCoordinator
 from .frontend import FrontendRegistration
@@ -63,6 +64,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # airportsdata reads its bundled CSV on first use. Warm the cache outside
+    # the event loop before sensors or schedule parsing can request a lookup.
+    await hass.async_add_executor_job(load_airports)
     coordinator = PilotTrackerCoordinator(hass, TripStore(hass))
     await coordinator.async_restore()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
