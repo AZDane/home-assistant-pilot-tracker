@@ -23,6 +23,37 @@ def validate_collection_horizon(trips: list[Trip], imported: Trip) -> None:
         raise ScheduleLimitError("Loaded schedules span more than 62 days")
 
 
+def validate_leg_order(trip: Trip) -> None:
+    """Reject a malformed pairing containing simultaneously scheduled legs."""
+    ordered = sorted(trip.legs, key=lambda leg: leg.scheduled_departure)
+    for previous, current in zip(ordered, ordered[1:], strict=False):
+        if current.scheduled_departure < previous.scheduled_arrival:
+            raise ScheduleConflictError(
+                f"{current.airline}{current.flight_number} overlaps "
+                f"{previous.airline}{previous.flight_number}"
+            )
+
+
+def overlapping_trip_keys(trips: list[Trip]) -> list[str]:
+    """Return every trip containing a leg that overlaps another trip's leg."""
+    conflicts: set[str] = set()
+    active = [trip for trip in trips if trip.status == TripStatus.ACTIVE]
+    for index, first in enumerate(active):
+        for second in active[index + 1:]:
+            if trips_overlap(first, second):
+                conflicts.update((first.key, second.key))
+    return sorted(conflicts)
+
+
+def trips_overlap(first: Trip, second: Trip) -> bool:
+    """Return whether any flight intervals in two trips intersect."""
+    return any(
+        left.scheduled_departure < right.scheduled_arrival
+        and right.scheduled_departure < left.scheduled_arrival
+        for left in first.legs for right in second.legs
+    )
+
+
 def merge_trip(existing: Trip | None, imported: Trip) -> Trip:
     """Merge an imported revision while preserving operational progress."""
     if existing is None or existing.status in (TripStatus.COMPLETE, TripStatus.ARCHIVED):

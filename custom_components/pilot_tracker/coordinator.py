@@ -14,7 +14,7 @@ from .models import FlightLeg, LegStatus, Trip, TripStatus
 from .flight_validation import validate_candidate
 from .arrival import arrival_signals, event_matches_flight
 from .providers.southwest import SouthwestPairingProvider
-from .schedule import merge_trip, validate_collection_horizon
+from .schedule import merge_trip, overlapping_trip_keys, trips_overlap, validate_collection_horizon, validate_leg_order
 from .state_machine import PilotTrackerState
 from .storage import TripStore
 from .tracking.flightradar24 import FlightRadar24Adapter, FlightRadar24NotReady
@@ -286,6 +286,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
 
     async def async_import_schedule(self, text: str) -> Trip:
         imported = SouthwestPairingProvider().parse(text)
+        validate_leg_order(imported)
         existing = self.store.get(imported.key)
         merged = merge_trip(existing, imported)
         validate_collection_horizon(self.store.trips, merged)
@@ -335,6 +336,11 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         trips = [trip for trip in self.store.trips if trip.status == TripStatus.ACTIVE]
         if not trips:
             return None
+        self.schedule_conflicts = overlapping_trip_keys(trips)
+        if self.schedule_conflicts:
+            self.last_rejection = "overlapping_schedule_conflict"
+            self.state = PilotTrackerState.ERROR
+            return None
         now = datetime.now(tz=trips[0].legs[0].scheduled_departure.tzinfo)
         current = [trip for trip in trips if trip.legs[0].scheduled_departure - RESOLVE_BEFORE <= now
                    <= trip.legs[-1].scheduled_arrival + timedelta(hours=4)]
@@ -343,7 +349,6 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             self.last_rejection = "overlapping_schedule_conflict"
             self.state = PilotTrackerState.ERROR
             return None
-        self.schedule_conflicts = []
         selected = current[0] if current else next(
             (trip for trip in trips if trip.legs[-1].scheduled_arrival + timedelta(hours=4) >= now),
             None,
@@ -356,17 +361,19 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         """Keep one explicitly selected conflicting trip and delete its peers."""
         if keep_trip_key not in self.schedule_conflicts:
             raise ValueError("Selected trip is not part of the current conflict")
-        for trip_key in list(self.schedule_conflicts):
-            if trip_key != keep_trip_key:
-                await self.store.async_remove(trip_key)
         kept = self.store.get(keep_trip_key)
         if kept is None:
             raise ValueError("Selected trip no longer exists")
-        self.schedule_conflicts = []
+        for trip in list(self.store.trips):
+            if trip.key != keep_trip_key and trips_overlap(kept, trip):
+                await self.store.async_remove(trip.key)
+        self.schedule_conflicts = overlapping_trip_keys(self.store.trips)
         self.last_rejection = None
         self.trip = kept
         await self.store.async_select(kept.key)
-        self.state = PilotTrackerState.WAITING_FOR_DUTY
+        self.state = PilotTrackerState.ERROR if self.schedule_conflicts else PilotTrackerState.WAITING_FOR_DUTY
+        if self.schedule_conflicts:
+            self.last_rejection = "overlapping_schedule_conflict"
         self.async_set_updated_data(None)
         await self.async_evaluate_tracking()
 

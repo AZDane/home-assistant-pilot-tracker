@@ -176,7 +176,8 @@ class PilotTrackerCard extends HTMLElement {
             <select class="schedule-picker" id="schedule-select" aria-label="Select a loaded schedule">
               ${schedules.map((item) => `<option value="${escapeHtml(item.key)}" ${item.key === selectedSchedule?.key ? "selected" : ""}>${escapeHtml(item.trip_id)} · ${escapeHtml(item.start)}–${escapeHtml(item.end)} · ${item.leg_count} legs${item.selected ? " · active" : ""}${item.conflicting ? " · conflict" : ""}</option>`).join("")}
             </select>
-            ${this.scheduleDetail(selectedSchedule)}
+            <button id="schedule-toggle">${this._scheduleExpanded ? "Hide schedule" : "View schedule"}</button>
+            ${this._scheduleExpanded ? this.scheduleDetail(selectedSchedule) : ""}
           ` : `<div class="schedule-head">No schedules loaded</div>`}
         </div>
         <dialog id="import-dialog"><h3>Import Southwest pairing</h3><textarea id="schedule-text" placeholder="Paste HERB TIME/ESTIMATED pairing text"></textarea><div class="actions"><button id="cancel">Cancel</button><button class="primary" id="submit">Import</button></div></dialog>
@@ -220,6 +221,11 @@ class PilotTrackerCard extends HTMLElement {
     q("#cancel")?.addEventListener("click", () => q("#import-dialog").close());
     q("#schedule-select")?.addEventListener("change", (event) => {
       this._selectedScheduleKey = event.target.value;
+      this._scheduleExpanded = false;
+      this.render();
+    });
+    q("#schedule-toggle")?.addEventListener("click", () => {
+      this._scheduleExpanded = !this._scheduleExpanded;
       this.render();
     });
     q("#submit")?.addEventListener("click", async () => {
