@@ -314,12 +314,34 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         if removing_active and self.current_leg and self.current_leg.status == LegStatus.ACTIVE:
             raise ValueError("Cannot remove a trip while its current leg is being tracked")
         await self.store.async_remove(trip_key)
-        if removing_active:
-            self.trip = self._choose_operational_trip(None)
-            self.state = PilotTrackerState.WAITING_FOR_DUTY if self.trip else PilotTrackerState.NO_SCHEDULE
+        # A conflict can leave self.trip unset, so recompute after every
+        # deletion—not only when the removed key happened to be selected.
+        preferred = None if removing_active else self.trip
+        self.trip = self._choose_operational_trip(preferred)
+        if self.schedule_conflicts:
+            self.last_rejection = "overlapping_schedule_conflict"
+            self.state = PilotTrackerState.ERROR
+        else:
+            if self.last_rejection == "overlapping_schedule_conflict":
+                self.last_rejection = None
+            active_leg = self.current_leg
+            if active_leg and active_leg.status == LegStatus.ACTIVE:
+                self.state = PilotTrackerState.TRACKING_FLIGHT
+            else:
+                self.state = PilotTrackerState.WAITING_FOR_DUTY if self.trip else PilotTrackerState.NO_SCHEDULE
         self.async_set_updated_data(None)
+        if self.trip and not self.schedule_conflicts:
+            await self.async_evaluate_tracking()
 
     def _choose_operational_trip(self, preferred: Trip | None) -> Trip | None:
+        trips = [trip for trip in self.store.trips if trip.status == TripStatus.ACTIVE]
+        self.schedule_conflicts = overlapping_trip_keys(trips)
+        if not trips:
+            return None
+        if self.schedule_conflicts:
+            self.last_rejection = "overlapping_schedule_conflict"
+            self.state = PilotTrackerState.ERROR
+            return None
         # A trip may pin operational ownership only after its current aircraft
         # has been positively identified. Merely being the previously selected
         # future trip must not block a newly eligible earlier pairing.
@@ -333,14 +355,6 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         ):
             self.hass.async_create_task(self.store.async_select(preferred.key))
             return preferred
-        trips = [trip for trip in self.store.trips if trip.status == TripStatus.ACTIVE]
-        if not trips:
-            return None
-        self.schedule_conflicts = overlapping_trip_keys(trips)
-        if self.schedule_conflicts:
-            self.last_rejection = "overlapping_schedule_conflict"
-            self.state = PilotTrackerState.ERROR
-            return None
         now = datetime.now(tz=trips[0].legs[0].scheduled_departure.tzinfo)
         current = [trip for trip in trips if trip.legs[0].scheduled_departure - RESOLVE_BEFORE <= now
                    <= trip.legs[-1].scheduled_arrival + timedelta(hours=4)]
