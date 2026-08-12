@@ -3,7 +3,6 @@
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .airports import airport_coordinates
 from .const import DOMAIN
 
 
@@ -179,20 +178,13 @@ class FlightMapSensor(BaseSensor):
             return {"flights": [], "bounds": None}
         latitude = float(flight["latitude"])
         longitude = float(flight["longitude"])
-        leg = self.coordinator.current_leg
-        route_points = [(latitude, longitude)]
-        if leg:
-            airports = (airport_coordinates(leg.origin), airport_coordinates(leg.destination))
-            route_points.extend(point for point in airports if point)
-        latitudes = [point[0] for point in route_points]
-        longitudes = [point[1] for point in route_points]
-        # Frame the full city pair from origin to destination. The frontend
-        # freezes these bounds for the flight, preserving manual pan and zoom.
-        latitude_padding = max(1.0, (max(latitudes) - min(latitudes)) * 0.12)
-        longitude_padding = max(1.0, (max(longitudes) - min(longitudes)) * 0.08)
+        # Use the compact regional viewport rather than framing an entire
+        # long-haul city pair, which makes the useful map detail too small.
+        latitude_radius = 5.0
+        longitude_radius = 6.0
         bounds = (
-            f"{max(latitudes) + latitude_padding},{min(latitudes) - latitude_padding},"
-            f"{min(longitudes) - longitude_padding},{max(longitudes) + longitude_padding}"
+            f"{latitude + latitude_radius},{latitude - latitude_radius},"
+            f"{longitude - longitude_radius},{longitude + longitude_radius}"
         )
         return {"flights": [dict(flight)], "bounds": bounds}
 
