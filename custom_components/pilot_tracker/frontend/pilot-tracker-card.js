@@ -15,23 +15,46 @@ function deviceTime(value) {
 function loadPilotLeaflet() {
   if (window.PilotTrackerLeaflet) return Promise.resolve(window.PilotTrackerLeaflet);
   if (window.PilotTrackerLeafletPromise) return window.PilotTrackerLeafletPromise;
-  window.PilotTrackerLeafletPromise = new Promise((resolve, reject) => {
-    if (!document.querySelector("link[data-pilot-leaflet]")) {
-      const stylesheet = document.createElement("link");
-      stylesheet.rel = "stylesheet";
-      stylesheet.href = "/pilot_tracker_frontend/leaflet.css";
-      stylesheet.dataset.pilotLeaflet = "";
-      document.head.appendChild(stylesheet);
-    }
-    const script = document.createElement("script");
-    script.src = "/pilot_tracker_frontend/leaflet.js";
-    script.dataset.pilotLeaflet = "";
-    script.onload = () => {
-      window.PilotTrackerLeaflet = window.L.noConflict();
-      resolve(window.PilotTrackerLeaflet);
-    };
-    script.onerror = () => reject(new Error("Pilot Tracker map library failed to load"));
-    document.head.appendChild(script);
+  window.PilotTrackerLeafletPromise = Promise.all([
+    new Promise((resolve, reject) => {
+      const existing = document.querySelector("link[data-pilot-leaflet]");
+      if (existing?.sheet) {
+        resolve();
+        return;
+      }
+      const stylesheet = existing || document.createElement("link");
+      const loaded = () => resolve();
+      const failed = () => reject(new Error("Pilot Tracker map stylesheet failed to load"));
+      stylesheet.addEventListener("load", loaded, {once:true});
+      stylesheet.addEventListener("error", failed, {once:true});
+      if (!existing) {
+        stylesheet.rel = "stylesheet";
+        stylesheet.href = "/pilot_tracker_frontend/leaflet.css";
+        stylesheet.dataset.pilotLeaflet = "";
+        document.head.appendChild(stylesheet);
+      }
+    }),
+    new Promise((resolve, reject) => {
+      if (window.L) {
+        resolve();
+        return;
+      }
+      const existing = document.querySelector("script[data-pilot-leaflet]");
+      const script = existing || document.createElement("script");
+      script.addEventListener("load", resolve, {once:true});
+      script.addEventListener("error", () => reject(new Error("Pilot Tracker map library failed to load")), {once:true});
+      if (!existing) {
+        script.src = "/pilot_tracker_frontend/leaflet.js";
+        script.dataset.pilotLeaflet = "";
+        document.head.appendChild(script);
+      }
+    }),
+  ]).then(() => {
+    window.PilotTrackerLeaflet = window.L.noConflict();
+    return window.PilotTrackerLeaflet;
+  }).catch((error) => {
+    window.PilotTrackerLeafletPromise = null;
+    throw error;
   });
   return window.PilotTrackerLeafletPromise;
 }
