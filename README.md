@@ -56,8 +56,18 @@ registration error in the browser.
 ## Import a schedule
 
 Open **Settings → Devices & services → Pilot Tracker → Configure**, choose
-**Import schedule**, and paste the full pairing text. Keep the heading that
-identifies Herb Time, Local Time, or Domicile Time.
+**Import schedule**, and paste either:
+
+- Full pairing-detail text, including the heading that identifies Herb Time,
+  Local Time, or Domicile Time.
+- Compact local-time roster rows in the form
+  `08/14/2026 3445 PHX 1640 SDF 2305`. Every departure and arrival is
+  interpreted in that airport's local time. A trailing `Sent from my iPhone`
+  line is accepted and ignored.
+
+A compact single pairing is identified by its first date. A multi-pairing
+monthly roster is identified by its dominant month, including a carry-in leg
+from the preceding month.
 
 The integration stores imported schedules in Home Assistant's local storage.
 It does not send pairing text or crew information to an external service. Only

@@ -1,6 +1,6 @@
 import_schedule:
   name: Import schedule
-  description: Import or revise a Southwest HERB TIME pairing.
+  description: Import or revise a Southwest pairing or compact local-time roster.
   fields:
     schedule_text:
       name: Schedule text

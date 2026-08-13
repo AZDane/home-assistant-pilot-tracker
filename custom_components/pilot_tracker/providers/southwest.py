@@ -21,6 +21,13 @@ _LEG = re.compile(
     r"(?P<flight>\d{1,4})\s+(?P<origin>[A-Z]{3})\s+"
     r"(?P<departure>\d{4})\s+(?P<destination>[A-Z]{3})\s+(?P<arrival>\d{4})\b"
 )
+_LOCAL_ROSTER_LEG = re.compile(
+    r"^\s*(?P<month>\d{1,2})/(?P<day>\d{1,2})/(?P<year>20\d{2})\s+"
+    r"(?P<flight>\d{1,4})\s+(?P<origin>[A-Z]{3})\s+"
+    r"(?P<departure>\d{4})\s+(?P<destination>[A-Z]{3})\s+(?P<arrival>\d{4})\s*$",
+    re.IGNORECASE,
+)
+_IPHONE_SIGNATURE = re.compile(r"^\s*Sent from my iPhone\s*$", re.IGNORECASE)
 _MONTHS = {name: number for number, name in enumerate(
     ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1
 )}
@@ -34,6 +41,9 @@ class SouthwestPairingProvider:
         self._airport_timezone = airport_timezone_lookup
 
     def parse(self, text: str, *, year: int | None = None) -> Trip:
+        local_roster = self._local_roster_rows(text)
+        if local_roster is not None:
+            return self._parse_local_roster(local_roster)
         time_mode = self._time_mode(text)
         matches = list(_LEG.finditer(text))
         if not matches:
@@ -79,6 +89,66 @@ class SouthwestPairingProvider:
             self._trip_id(text), self.source, time_basis, legs,
             revision_date=self._revision_date(text),
             metadata={"schedule_time_mode": time_mode, "domicile_airport": domicile_airport},
+        )
+
+    @staticmethod
+    def _local_roster_rows(text: str) -> list[re.Match[str]] | None:
+        """Strictly recognize rows copied from the local-time roster view."""
+        rows: list[re.Match[str]] = []
+        for line in text.splitlines():
+            if not line.strip() or _IPHONE_SIGNATURE.fullmatch(line):
+                continue
+            match = _LOCAL_ROSTER_LEG.fullmatch(line)
+            if match is None:
+                return None
+            rows.append(match)
+        return rows or None
+
+    def _parse_local_roster(self, rows: list[re.Match[str]]) -> Trip:
+        legs: list[FlightLeg] = []
+        duty_dates: dict[date, int] = {}
+        service_dates: list[date] = []
+        for sequence, match in enumerate(rows, 1):
+            values = match.groupdict()
+            service_date = date(int(values["year"]), int(values["month"]), int(values["day"]))
+            service_dates.append(service_date)
+            try:
+                departure_timezone = ZoneInfo(self._airport_timezone(values["origin"].upper()))
+                arrival_timezone = ZoneInfo(self._airport_timezone(values["destination"].upper()))
+            except (KeyError, ValueError, ZoneInfoNotFoundError) as error:
+                raise ScheduleParseError(str(error)) from error
+            departure = self._at(service_date, values["departure"], departure_timezone)
+            arrival = self._at(service_date, values["arrival"], arrival_timezone)
+            if arrival <= departure:
+                arrival += timedelta(days=1)
+            duty_period = duty_dates.setdefault(service_date, len(duty_dates) + 1)
+            legs.append(FlightLeg(
+                sequence, service_date.isoformat(), values["flight"], "WN",
+                values["origin"].upper(), values["destination"].upper(), departure, arrival,
+                duty_period=duty_period,
+            ))
+
+        span = max(service_dates) - min(service_dates)
+        is_month_roster = span > timedelta(days=7)
+        if is_month_roster:
+            month_counts: dict[tuple[int, int], int] = {}
+            for service_date in service_dates:
+                key = (service_date.year, service_date.month)
+                month_counts[key] = month_counts.get(key, 0) + 1
+            roster_year, roster_month = max(month_counts, key=lambda key: (month_counts[key], key))
+            trip_id = f"{date(roster_year, roster_month, 1):%b}".upper() + f"-{roster_year}"
+            identifier_basis = "month"
+        else:
+            trip_id = min(service_dates).isoformat()
+            identifier_basis = "start_date"
+
+        return Trip(
+            trip_id, "southwest_local_roster", "airport_local", legs,
+            metadata={
+                "schedule_time_mode": "local",
+                "format": "local_roster",
+                "identifier_basis": identifier_basis,
+            },
         )
 
     @staticmethod

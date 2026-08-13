@@ -344,7 +344,7 @@ class PilotTrackerCard extends HTMLElement {
             ${this._scheduleExpanded ? this.scheduleDetail(selectedSchedule) : ""}
           ` : `<div class="schedule-head">No schedules loaded</div>`}
         </div>
-        <dialog id="import-dialog"><h3>Import Southwest pairing</h3><textarea id="schedule-text" placeholder="Paste HERB TIME/ESTIMATED pairing text"></textarea><div class="actions"><button id="cancel">Cancel</button><button class="primary" id="submit">Import</button></div></dialog>
+        <dialog id="import-dialog"><h3>Import Southwest schedule</h3><textarea id="schedule-text" placeholder="Paste pairing details or local-time roster rows"></textarea><div class="actions"><button id="cancel">Cancel</button><button class="primary" id="submit">Import</button></div></dialog>
       </ha-card>`;
     this.bind();
     this.renderMap();

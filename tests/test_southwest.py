@@ -145,3 +145,72 @@ DOMICILE TIME
     assert trip.metadata == {"schedule_time_mode": "domicile", "domicile_airport": "PHX"}
     assert all(leg.scheduled_departure.utcoffset() == timedelta(hours=-7) for leg in trip.legs)
     assert all(leg.scheduled_arrival.utcoffset() == timedelta(hours=-7) for leg in trip.legs)
+
+
+LOCAL_ROSTER_TIMEZONES = {
+    "PHX": "America/Phoenix",
+    "SDF": "America/Kentucky/Louisville",
+    "LAS": "America/Los_Angeles",
+    "SNA": "America/Los_Angeles",
+    "SMF": "America/Los_Angeles",
+    "OAK": "America/Los_Angeles",
+}
+
+
+def local_roster_timezone(code):
+    return LOCAL_ROSTER_TIMEZONES[code]
+
+
+def test_parses_local_airport_time_roster_with_optional_iphone_signature():
+    text = """08/14/2026 3445 PHX 1640 SDF 2305
+08/15/2026 4898 SDF 1650 LAS 1755
+08/15/2026 1263 LAS 1845 SNA 1950
+08/16/2026 2761 SNA 1215 SMF 1345
+08/16/2026 3751 SMF 1425 SNA 1555
+08/16/2026 3770 SNA 1805 OAK 1925
+08/16/2026 4647 OAK 2010 PHX 2205
+Sent from my iPhone
+"""
+    trip = SouthwestPairingProvider(local_roster_timezone).parse(text)
+
+    assert trip.trip_id == "2026-08-14"
+    assert trip.source == "southwest_local_roster"
+    assert trip.time_basis == "airport_local"
+    assert trip.metadata == {
+        "schedule_time_mode": "local",
+        "format": "local_roster",
+        "identifier_basis": "start_date",
+    }
+    assert [leg.duty_period for leg in trip.legs] == [1, 2, 2, 3, 3, 3, 3]
+    assert trip.legs[0].scheduled_departure.isoformat() == "2026-08-14T16:40:00-07:00"
+    assert trip.legs[0].scheduled_arrival.isoformat() == "2026-08-14T23:05:00-04:00"
+
+
+def test_month_roster_uses_dominant_month_identifier_and_local_rollover():
+    text = """07/31/2026 4600 PHX 1520 SDF 2040
+08/01/2026 2278 SDF 1345 PHX 1505
+08/14/2026 3445 PHX 1640 SDF 2305
+08/15/2026 4898 SDF 1650 LAS 1755
+08/21/2026 3445 PHX 1640 SDF 2305
+08/22/2026 4898 SDF 1650 LAS 1755
+"""
+    trip = SouthwestPairingProvider(local_roster_timezone).parse(text)
+
+    assert trip.trip_id == "AUG-2026"
+    assert trip.metadata["identifier_basis"] == "month"
+    assert len(trip.legs) == 6
+
+
+def test_local_roster_adds_day_when_arrival_is_after_midnight_locally():
+    text = "08/14/2026 3445 SDF 2300 PHX 0010"
+    trip = SouthwestPairingProvider(local_roster_timezone).parse(text)
+
+    assert trip.legs[0].scheduled_arrival.date().isoformat() == "2026-08-15"
+
+
+def test_local_roster_recognition_rejects_unrecognized_extra_text():
+    text = """08/14/2026 3445 PHX 1640 SDF 2305
+These times are local
+"""
+    with pytest.raises(ScheduleParseError, match="Herb Time, Local Time, or Domicile Time"):
+        SouthwestPairingProvider(local_roster_timezone).parse(text)

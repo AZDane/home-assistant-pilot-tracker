@@ -15,8 +15,8 @@
       },
       "import_schedule": {
         "title": "Import or replace schedule",
-        "description": "Paste text extracted from a Southwest pairing displayed in HERB TIME/ESTIMATED.",
-        "data": {"schedule_text": "Pairing text"}
+        "description": "Paste Southwest pairing-detail text (Herb, Local, or Domicile Time) or compact local-time roster rows.",
+        "data": {"schedule_text": "Schedule text"}
       },
       "view_schedule": {
         "title": "View schedules",
@@ -44,7 +44,7 @@
       }
     },
     "error": {
-      "invalid_schedule": "The text is not a supported Southwest HERB TIME pairing.",
+      "invalid_schedule": "The text is not a supported Southwest pairing or local-time roster.",
       "schedule_conflict": "This schedule conflicts with the active trip or current leg and was not applied.",
       "no_current_leg": "There is no current leg to reset.",
       "no_active_leg": "There is no actively tracked leg to complete.",
