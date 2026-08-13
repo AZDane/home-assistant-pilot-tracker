@@ -70,24 +70,56 @@ class PilotTrackerLiveMap extends HTMLElement {
       if (!this.isConnected || !this.querySelector(".pilot-map-canvas")) return;
       this._L = L;
       this._map = L.map(this.querySelector(".pilot-map-canvas"), {zoomControl:true}).setView([39, -98], 4);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      this._tileLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom:18,
         keepBuffer:4,
-        updateWhenIdle:false,
+        updateWhenIdle:true,
         attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(this._map);
       this._track = L.polyline([], {color:"#ff8a00", weight:5, opacity:.9}).addTo(this._map);
       this._resizeObserver = new ResizeObserver(() => {
-        if (this._map && this.offsetParent !== null) this._map.invalidateSize({pan:false});
+        if (this._map && this.offsetParent !== null) this.stabilizeLayout();
       });
       this._resizeObserver.observe(this);
-      requestAnimationFrame(() => this._map?.invalidateSize({pan:false}));
+      if (window.IntersectionObserver) {
+        this._intersectionObserver = new IntersectionObserver((entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) this.stabilizeLayout();
+        });
+        this._intersectionObserver.observe(this);
+      }
+      this.stabilizeLayout();
       this.updateMap();
     } catch (error) {
       const canvas = this.querySelector(".pilot-map-canvas");
       if (canvas) canvas.textContent = error.message;
     } finally {
       this._initializing = false;
+    }
+  }
+
+  stabilizeLayout() {
+    if (!this._map || this.offsetParent === null) return;
+    clearTimeout(this._layoutTimer);
+    this._map.invalidateSize({pan:false, debounceMoveend:true});
+    // Bubble/conditional cards animate their expansion. Measure once more after
+    // that transition so Leaflet requests tiles for the final card dimensions.
+    this._layoutTimer = setTimeout(() => {
+      if (!this._map || this.offsetParent === null) return;
+      this._map.invalidateSize({pan:false, debounceMoveend:true});
+      this.fitCurrentFlight();
+    }, 400);
+  }
+
+  fitCurrentFlight() {
+    if (!this._map || !this._hass || !this.config) return;
+    const state = this._hass.states[this.config.entity];
+    const flight = state?.attributes?.flights?.[0];
+    if (!flight || flight.latitude == null || flight.longitude == null) return;
+    const bounds = String(state.attributes.bounds || "").split(",").map(Number);
+    if (bounds.length === 4 && bounds.every(Number.isFinite)) {
+      this._map.fitBounds([[bounds[1],bounds[2]],[bounds[0],bounds[3]]]);
+    } else {
+      this._map.setView([Number(flight.latitude), Number(flight.longitude)], 6);
     }
   }
 
@@ -122,7 +154,9 @@ class PilotTrackerLiveMap extends HTMLElement {
   }
 
   disconnectedCallback() {
+    clearTimeout(this._layoutTimer);
     this._resizeObserver?.disconnect();
+    this._intersectionObserver?.disconnect();
     if (this._map) this._map.remove();
     this._map = null;
   }
