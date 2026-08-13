@@ -35,6 +35,20 @@ def normalize_airline(flight: dict[str, Any]) -> str:
     return str(flight.get("airline_iata") or flight.get("airline_icao") or "").upper()
 
 
+def route_code(flight: dict[str, Any], endpoint: str) -> str:
+    """Return the best IATA/ICAO route code supplied for one endpoint."""
+    return str(
+        flight.get(f"airport_{endpoint}_code_iata")
+        or flight.get(f"airport_{endpoint}_code_icao")
+        or ""
+    ).upper()
+
+
+def route_matches(reported: str, expected_iata: str) -> bool:
+    """Match an IATA code or a four-letter ICAO code ending in that IATA code."""
+    return reported == expected_iata or (len(reported) == 4 and reported.endswith(expected_iata))
+
+
 def validate_candidate(leg: FlightLeg, flight: dict[str, Any]) -> CandidateResult:
     """Require flight, airline, route, live state, and departure-date agreement."""
     if normalize_flight_number(flight.get("flight_number")) != leg.flight_number:
@@ -42,9 +56,15 @@ def validate_candidate(leg: FlightLeg, flight: dict[str, Any]) -> CandidateResul
     airline = normalize_airline(flight)
     if airline != leg.airline:
         return CandidateResult(False, "airline_mismatch")
-    if str(flight.get("airport_origin_code_iata") or "").upper() != leg.origin:
+    origin = route_code(flight, "origin")
+    if not origin:
+        return CandidateResult(False, "missing_origin_data")
+    if not route_matches(origin, leg.origin):
         return CandidateResult(False, "origin_mismatch")
-    if str(flight.get("airport_destination_code_iata") or "").upper() != leg.destination:
+    destination = route_code(flight, "destination")
+    if not destination:
+        return CandidateResult(False, "missing_destination_data")
+    if not route_matches(destination, leg.destination):
         return CandidateResult(False, "destination_mismatch")
     scheduled = flight.get("time_scheduled_departure")
     if not isinstance(scheduled, (int, float)):

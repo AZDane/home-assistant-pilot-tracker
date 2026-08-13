@@ -140,9 +140,15 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
                     self.last_rejection_detail = {
                         "flight": f"{leg.airline}{leg.flight_number}",
                         "expected_origin": leg.origin,
-                        "received_origin": candidate.get("airport_origin_code_iata"),
+                        "received_origin": (
+                            candidate.get("airport_origin_code_iata")
+                            or candidate.get("airport_origin_code_icao")
+                        ),
                         "expected_destination": leg.destination,
-                        "received_destination": candidate.get("airport_destination_code_iata"),
+                        "received_destination": (
+                            candidate.get("airport_destination_code_iata")
+                            or candidate.get("airport_destination_code_icao")
+                        ),
                     }
         if accepted is None:
             self.accepted_flight = None

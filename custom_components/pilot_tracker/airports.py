@@ -29,3 +29,10 @@ def airport_coordinates(iata_code: str) -> tuple[float, float] | None:
     if not airport or airport.get("lat") is None or airport.get("lon") is None:
         return None
     return float(airport["lat"]), float(airport["lon"])
+
+
+def airport_icao(iata_code: str) -> str:
+    """Return the airport ICAO code, falling back to its IATA code."""
+    code = iata_code.strip().upper()
+    airport = load_airports().get(code)
+    return str(airport.get("icao") or code) if airport else code

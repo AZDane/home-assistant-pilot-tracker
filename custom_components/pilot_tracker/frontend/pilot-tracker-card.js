@@ -4,6 +4,14 @@ function escapeHtml(value) {
   })[character]);
 }
 
+function deviceTime(value) {
+  if (!value) return "Schedule unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString([], {
+    weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit", timeZoneName:"short",
+  });
+}
+
 function loadPilotLeaflet() {
   if (window.PilotTrackerLeaflet) return Promise.resolve(window.PilotTrackerLeaflet);
   if (window.PilotTrackerLeafletPromise) return window.PilotTrackerLeafletPromise;
@@ -256,10 +264,10 @@ class PilotTrackerCard extends HTMLElement {
           <div><div class="label">Next route</div><div class="value">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div></div>
           <div><div class="label">Tracked flights</div><div class="value">${this.attr(this.config.tracking_entity,"tracked_flights",0)}</div></div>
           <div><div class="label">Position</div><div class="value">${this.attr(this.config.tracking_entity,"position_fresh",false) ? "Live" : "Waiting"}</div></div>
-          <div><div class="label">Current departure · Domicile</div><div class="value">${escapeHtml(this.attr(this.config.current_flight_entity,"departure_domicile_display","—"))}</div></div>
-          <div><div class="label">Current departure · Local</div><div class="value">${escapeHtml(this.attr(this.config.current_flight_entity,"departure_local_display","—"))}</div></div>
-          <div><div class="label">Next departure · Domicile</div><div class="value">${escapeHtml(this.attr(this.config.next_flight_entity,"departure_domicile_display","—"))}</div></div>
-          <div><div class="label">Next departure · Local</div><div class="value">${escapeHtml(this.attr(this.config.next_flight_entity,"departure_local_display","—"))}</div></div>
+          <div><div class="label">Current departure · Device</div><div class="value">${escapeHtml(deviceTime(this.attr(this.config.current_flight_entity,"scheduled_departure")))}</div></div>
+          <div><div class="label">Current departure · ${escapeHtml(this.attr(this.config.current_flight_entity,"origin_icao","Origin"))}</div><div class="value">${escapeHtml(this.attr(this.config.current_flight_entity,"departure_local_display","—"))}</div></div>
+          <div><div class="label">Next departure · Device</div><div class="value">${escapeHtml(deviceTime(this.attr(this.config.next_flight_entity,"scheduled_departure")))}</div></div>
+          <div><div class="label">Next departure · ${escapeHtml(this.attr(this.config.next_flight_entity,"origin_icao","Origin"))}</div><div class="value">${escapeHtml(this.attr(this.config.next_flight_entity,"departure_local_display","—"))}</div></div>
         </div>
         <div class="actions">
           <button class="primary" id="import">Import schedule</button>
@@ -284,6 +292,12 @@ class PilotTrackerCard extends HTMLElement {
   pretty(value) { return String(value ?? "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
 
   rejectionText(rejection, detail) {
+    if (rejection === "missing_origin_data") {
+      return `FlightRadar24 returned ${escapeHtml(detail?.flight || "this flight")} without origin route data; waiting for complete live details.`;
+    }
+    if (rejection === "missing_destination_data") {
+      return `FlightRadar24 returned ${escapeHtml(detail?.flight || "this flight")} without destination route data; waiting for complete live details.`;
+    }
     if (rejection === "origin_mismatch" && detail) {
       return `Origin mismatch for ${escapeHtml(detail.flight)}: expected ${escapeHtml(detail.expected_origin)}, FlightRadar24 returned ${escapeHtml(detail.received_origin || "unknown")}.`;
     }
@@ -295,9 +309,14 @@ class PilotTrackerCard extends HTMLElement {
 
   nextFlightPanel(next) {
     const attributes = this._hass.states[this.config.next_flight_entity]?.attributes || {};
-    const domicile = attributes.departure_domicile_display || "Schedule unavailable";
     const local = attributes.departure_local_display || "Schedule unavailable";
-    return `<div class="next-panel"><div class="label">Next scheduled flight</div><div class="next-route">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div><div>${next}</div><div style="margin-top:10px"><b>Domicile:</b> ${escapeHtml(domicile)}</div><div><b>Local:</b> ${escapeHtml(local)}</div></div>`;
+    const airport = attributes.origin_icao || attributes.origin || "Origin";
+    const device = deviceTime(attributes.scheduled_departure);
+    return `<div class="next-panel"><div class="label">Next scheduled flight</div><div class="next-route">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div><div>${next}</div><div style="margin-top:10px"><b>Device time:</b> ${escapeHtml(device)}</div><div><b>${escapeHtml(airport)} time:</b> ${escapeHtml(local)}</div></div>`;
+  }
+
+  formatDeviceTime(value) {
+    return deviceTime(value);
   }
 
   scheduleDetail(schedule) {
@@ -305,7 +324,7 @@ class PilotTrackerCard extends HTMLElement {
     return `<div class="schedule-detail">
       <div class="schedule-head"><div><b>${escapeHtml(schedule.trip_id)}</b>${schedule.selected ? " · Active" : ""}${schedule.conflicting ? " · Conflict" : ""}<div class="schedule-meta">${escapeHtml(schedule.start)}–${escapeHtml(schedule.end)} · ${schedule.leg_count} legs · ${escapeHtml(this.pretty(schedule.time_mode))} time</div></div></div>
       <div class="leg-table"><table class="legs"><thead><tr><th>Date</th><th>Flight</th><th>Route</th><th>Duty</th><th>Departure</th><th>Arrival</th><th>Status</th></tr></thead><tbody>
-        ${(schedule.legs || []).map((leg) => `<tr><td>${escapeHtml(this.shortDate(leg.departure))}</td><td><b>${escapeHtml(leg.flight)}</b></td><td class="leg-route">${escapeHtml(leg.origin)} → ${escapeHtml(leg.destination)}</td><td>${escapeHtml(leg.duty_period)}</td><td><b>Dom:</b> ${escapeHtml(leg.departure_domicile_display)}<br><b>Local:</b> ${escapeHtml(leg.departure_local_display)}</td><td><b>Dom:</b> ${escapeHtml(leg.arrival_domicile_display)}<br><b>Local:</b> ${escapeHtml(leg.arrival_local_display)}</td><td>${escapeHtml(this.pretty(leg.status))}</td></tr>`).join("")}
+        ${(schedule.legs || []).map((leg) => `<tr><td>${escapeHtml(this.shortDate(leg.departure))}</td><td><b>${escapeHtml(leg.flight)}</b></td><td class="leg-route">${escapeHtml(leg.origin)} → ${escapeHtml(leg.destination)}</td><td>${escapeHtml(leg.duty_period)}</td><td><b>Device:</b> ${escapeHtml(this.formatDeviceTime(leg.departure))}<br><b>${escapeHtml(leg.origin_icao || leg.origin)}:</b> ${escapeHtml(leg.departure_local_display)}</td><td><b>Device:</b> ${escapeHtml(this.formatDeviceTime(leg.arrival))}<br><b>${escapeHtml(leg.destination_icao || leg.destination)}:</b> ${escapeHtml(leg.arrival_local_display)}</td><td>${escapeHtml(this.pretty(leg.status))}</td></tr>`).join("")}
       </tbody></table></div>
       <div class="schedule-actions">${schedule.conflicting ? `<button data-keep="${escapeHtml(schedule.key)}">Keep this schedule</button>` : ""}<button class="danger" data-remove="${escapeHtml(schedule.key)}">Delete this schedule</button></div>
     </div>`;
@@ -408,9 +427,10 @@ class PilotTrackerMapCard extends HTMLElement {
       const flight = this._hass.states[this.config.next_flight_entity];
       const origin = this._hass.states[this.config.next_origin_entity]?.state || "—";
       const destination = this._hass.states[this.config.next_destination_entity]?.state || "—";
-      const domicile = flight?.attributes?.departure_domicile_display || "Schedule unavailable";
       const local = flight?.attributes?.departure_local_display || "Schedule unavailable";
-      this.innerHTML = `<ha-card><style>.wrap{padding:28px;text-align:center}.label{color:var(--secondary-text-color);text-transform:uppercase;font-size:12px}.route{font-size:34px;font-weight:700;margin:10px}.flight{font-size:17px}.times{margin-top:10px;line-height:1.55}</style><div class="wrap"><div class="label">Next scheduled flight</div><div class="route">${escapeHtml(origin)} → ${escapeHtml(destination)}</div><div class="flight">${escapeHtml(flight?.state || "—")}</div><div class="times"><b>Domicile:</b> ${escapeHtml(domicile)}<br><b>Local:</b> ${escapeHtml(local)}</div></div></ha-card>`;
+      const airport = flight?.attributes?.origin_icao || origin;
+      const device = deviceTime(flight?.attributes?.scheduled_departure);
+      this.innerHTML = `<ha-card><style>.wrap{padding:28px;text-align:center}.label{color:var(--secondary-text-color);text-transform:uppercase;font-size:12px}.route{font-size:34px;font-weight:700;margin:10px}.flight{font-size:17px}.times{margin-top:10px;line-height:1.55}</style><div class="wrap"><div class="label">Next scheduled flight</div><div class="route">${escapeHtml(origin)} → ${escapeHtml(destination)}</div><div class="flight">${escapeHtml(flight?.state || "—")}</div><div class="times"><b>Device time:</b> ${escapeHtml(device)}<br><b>${escapeHtml(airport)} time:</b> ${escapeHtml(local)}</div></div></ha-card>`;
       return;
     }
     this.innerHTML = `<ha-card><div id="map"></div></ha-card>`;

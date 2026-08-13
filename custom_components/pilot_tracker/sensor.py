@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .airports import airport_timezone
+from .airports import airport_icao, airport_timezone
 from .const import DOMAIN
 
 
@@ -219,6 +219,8 @@ def _leg_time_displays(leg, trip):
     display_format = "%a %b %-d, %-I:%M %p %Z"
     return {
         "domicile_airport": domicile,
+        "origin_icao": airport_icao(leg.origin),
+        "destination_icao": airport_icao(leg.destination),
         "departure_domicile": leg.scheduled_departure.astimezone(domicile_zone).isoformat(),
         "arrival_domicile": leg.scheduled_arrival.astimezone(domicile_zone).isoformat(),
         "departure_local": leg.scheduled_departure.astimezone(origin_zone).isoformat(),

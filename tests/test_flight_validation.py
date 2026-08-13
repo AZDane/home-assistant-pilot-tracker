@@ -32,6 +32,25 @@ def test_accepts_southwest_icao_when_iata_is_missing():
     assert validate_candidate(leg, flight).accepted
 
 
+def test_accepts_airport_icao_when_iata_route_is_missing():
+    leg = SouthwestPairingProvider().parse(SAMPLE, year=2026).legs[0]
+    flight = candidate(leg)
+    flight["airport_origin_code_iata"] = None
+    flight["airport_origin_code_icao"] = "KPHX"
+    flight["airport_destination_code_iata"] = None
+    flight["airport_destination_code_icao"] = "KIND"
+
+    assert validate_candidate(leg, flight).accepted
+
+
+def test_reports_missing_route_data_separately_from_mismatch():
+    leg = SouthwestPairingProvider().parse(SAMPLE, year=2026).legs[0]
+    flight = candidate(leg)
+    flight["airport_origin_code_iata"] = None
+
+    assert validate_candidate(leg, flight).reason == "missing_origin_data"
+
+
 def test_rejects_reused_number_on_wrong_day():
     leg = SouthwestPairingProvider().parse(SAMPLE, year=2026).legs[0]
     flight = candidate(leg)
