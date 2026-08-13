@@ -8,4 +8,4 @@ STORAGE_KEY: Final = f"{DOMAIN}.trips"
 STORAGE_VERSION: Final = 1
 TIME_BASIS: Final = "America/Chicago"
 FRONTEND_URL: Final = "/pilot_tracker_frontend"
-FRONTEND_VERSION: Final = "2.2.3"
+FRONTEND_VERSION: Final = "2.2.4"
