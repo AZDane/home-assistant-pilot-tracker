@@ -128,7 +128,9 @@ class PilotTrackerLiveMap extends HTMLElement {
   }
 }
 
-customElements.define("pilot-tracker-live-map", PilotTrackerLiveMap);
+if (!customElements.get("pilot-tracker-live-map")) {
+  customElements.define("pilot-tracker-live-map", PilotTrackerLiveMap);
+}
 
 class PilotTrackerCard extends HTMLElement {
   setConfig(config) {
@@ -387,9 +389,13 @@ class PilotTrackerCard extends HTMLElement {
   }
 }
 
-customElements.define("pilot-tracker-card", PilotTrackerCard);
+if (!customElements.get("pilot-tracker-card")) {
+  customElements.define("pilot-tracker-card", PilotTrackerCard);
+}
 window.customCards = window.customCards || [];
-window.customCards.push({type:"pilot-tracker-card", name:"Pilot Tracker", description:"Schedule and live aircraft control for Pilot Tracker"});
+if (!window.customCards.some((card) => card.type === "pilot-tracker-card")) {
+  window.customCards.push({type:"pilot-tracker-card", name:"Pilot Tracker", description:"Schedule and live aircraft control for Pilot Tracker"});
+}
 
 class PilotTrackerMapCard extends HTMLElement {
   setConfig(config) {
@@ -443,5 +449,9 @@ class PilotTrackerMapCard extends HTMLElement {
   }
 }
 
-customElements.define("pilot-tracker-map-card", PilotTrackerMapCard);
-window.customCards.push({type:"pilot-tracker-map-card", name:"Pilot Tracker Map", description:"Clean live aircraft map with next-flight fallback"});
+if (!customElements.get("pilot-tracker-map-card")) {
+  customElements.define("pilot-tracker-map-card", PilotTrackerMapCard);
+}
+if (!window.customCards.some((card) => card.type === "pilot-tracker-map-card")) {
+  window.customCards.push({type:"pilot-tracker-map-card", name:"Pilot Tracker Map", description:"Clean live aircraft map with next-flight fallback"});
+}
