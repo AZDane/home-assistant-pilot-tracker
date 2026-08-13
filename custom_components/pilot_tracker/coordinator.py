@@ -238,7 +238,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             self._last_tracking_request_at = monotonic()
             _LOGGER.info("Re-requested FR24 tracking for active leg %s using %s", leg.sequence, identifier)
         event = self.tracking.last_event if event_matches_flight(
-            self.tracking.last_event, leg.tracking_identifiers
+            self.tracking.last_event, leg.tracking_identifiers, leg
         ) else None
         signals = arrival_signals(self.accepted_flight or {}, event)
         previous_evidence = set(self.trip.metadata.get("arrival_evidence", []))

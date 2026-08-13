@@ -5,6 +5,9 @@ from __future__ import annotations
 from math import asin, cos, radians, sin, sqrt
 from typing import Any
 
+from .flight_validation import normalize_flight_number, route_code, route_matches
+from .models import FlightLeg
+
 
 def distance_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance in nautical miles."""
@@ -38,10 +41,26 @@ def arrival_signals(flight: dict[str, Any], lifecycle_event: dict[str, Any] | No
     return signals
 
 
-def event_matches_flight(event: dict[str, Any] | None, identifiers: dict[str, str]) -> bool:
+def event_matches_flight(
+    event: dict[str, Any] | None,
+    identifiers: dict[str, str],
+    leg: FlightLeg,
+) -> bool:
+    """Match an arrival event to both the aircraft and scheduled operation.
+
+    FR24 can emit a landing/gate event for the aircraft's preceding flight just
+    after Pilot Tracker starts following its next delayed operation. Aircraft
+    identity alone is therefore not sufficient evidence of this leg's arrival.
+    """
     if not event:
         return False
-    for key in ("id", "aircraft_registration", "aircraft_icao_24bit", "callsign"):
-        if identifiers.get(key) and str(event.get(key, "")) == identifiers[key]:
-            return True
-    return False
+    identity_matches = any(
+        identifiers.get(key) and str(event.get(key, "")) == identifiers[key]
+        for key in ("id", "aircraft_registration", "aircraft_icao_24bit", "callsign")
+    )
+    if not identity_matches:
+        return False
+    if normalize_flight_number(event.get("flight_number")) != leg.flight_number:
+        return False
+    destination = route_code(event, "destination")
+    return bool(destination and route_matches(destination, leg.destination))
