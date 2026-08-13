@@ -57,9 +57,12 @@ def trips_overlap(first: Trip, second: Trip) -> bool:
 def select_pending_leg(trip: Trip, now: datetime) -> FlightLeg | None:
     """Select the operating leg, or otherwise the earliest future leg."""
     pending = [leg for leg in trip.legs if leg.status == LegStatus.PENDING]
+    # Pending legs have no positively identified aircraft, so do not retain an
+    # already-arrived leg using the active-flight arrival grace period. Once
+    # its scheduled arrival passes, select the earliest future leg instead.
     operating = [
         leg for leg in pending
-        if leg.scheduled_departure <= now <= leg.scheduled_arrival + timedelta(hours=1)
+        if leg.scheduled_departure <= now <= leg.scheduled_arrival
     ]
     if operating:
         return max(operating, key=lambda leg: leg.scheduled_departure)

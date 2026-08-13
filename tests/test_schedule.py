@@ -62,3 +62,10 @@ def test_between_legs_selection_chooses_next_future_leg():
     now = trip.legs[0].scheduled_arrival + timedelta(hours=2)
 
     assert select_pending_leg(trip, now) == trip.legs[1]
+
+
+def test_pending_leg_is_not_retained_after_scheduled_arrival():
+    trip = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    now = trip.legs[0].scheduled_arrival + timedelta(minutes=1)
+
+    assert select_pending_leg(trip, now) == trip.legs[1]
