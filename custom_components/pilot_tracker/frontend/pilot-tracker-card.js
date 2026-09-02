@@ -270,6 +270,9 @@ class PilotTrackerCard extends HTMLElement {
     const next = this.state(this.config.next_flight_entity, "none");
     const hasFlight = Number(this.state(this.config.map_entity, "0")) > 0;
     const nextDeparture = this.attr(this.config.next_flight_entity, "scheduled_departure");
+    const currentHotel = this.attr(this.config.trip_entity, "current_hotel");
+    const hotelPhone = this.attr(this.config.trip_entity, "current_hotel_phone");
+    const layoverAirport = this.attr(this.config.trip_entity, "current_layover_airport");
     this.innerHTML = `
       <ha-card>
         <style>
@@ -325,6 +328,7 @@ class PilotTrackerCard extends HTMLElement {
           <div><div class="label">Next route</div><div class="value">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div></div>
           <div><div class="label">Tracked flights</div><div class="value">${this.attr(this.config.tracking_entity,"tracked_flights",0)}</div></div>
           <div><div class="label">Position</div><div class="value">${this.attr(this.config.tracking_entity,"position_fresh",false) ? "Live" : "Waiting"}</div></div>
+          ${currentHotel ? `<div><div class="label">Layover hotel · ${escapeHtml(layoverAirport || "")}</div><div class="value">${escapeHtml(currentHotel)}${hotelPhone ? `<br>${escapeHtml(hotelPhone)}` : ""}</div></div>` : ""}
           <div><div class="label">Current departure · Device</div><div class="value">${escapeHtml(deviceTime(this.attr(this.config.current_flight_entity,"scheduled_departure")))}</div></div>
           <div><div class="label">Current departure · ${escapeHtml(this.attr(this.config.current_flight_entity,"origin_icao","Origin"))}</div><div class="value">${escapeHtml(this.attr(this.config.current_flight_entity,"departure_local_display","—"))}</div></div>
           <div><div class="label">Next departure · Device</div><div class="value">${escapeHtml(deviceTime(this.attr(this.config.next_flight_entity,"scheduled_departure")))}</div></div>
@@ -466,6 +470,7 @@ class PilotTrackerMapCard extends HTMLElement {
       next_flight_entity: "sensor.next_flight",
       next_origin_entity: "sensor.next_origin",
       next_destination_entity: "sensor.next_destination",
+      trip_entity: "sensor.trip",
       title: "Pilot",
       ...config,
     };
@@ -474,7 +479,9 @@ class PilotTrackerMapCard extends HTMLElement {
     this._hass = hass;
     const mapState = hass.states[this.config.map_entity]?.state || "0";
     const nextState = hass.states[this.config.next_flight_entity];
+    const tripState = hass.states[this.config.trip_entity];
     const signature = JSON.stringify([mapState, nextState?.state, nextState?.attributes?.scheduled_departure,
+      tripState?.attributes?.current_hotel, tripState?.attributes?.current_layover_airport,
       hass.states[this.config.next_origin_entity]?.state, hass.states[this.config.next_destination_entity]?.state]);
     if (this._signature === signature && this.querySelector("pilot-tracker-live-map")) {
       this.querySelector("pilot-tracker-live-map").hass = hass;
@@ -498,7 +505,11 @@ class PilotTrackerMapCard extends HTMLElement {
       const local = flight?.attributes?.departure_local_display || "Schedule unavailable";
       const airport = flight?.attributes?.origin_icao || origin;
       const device = deviceTime(flight?.attributes?.scheduled_departure);
-      this.innerHTML = `<ha-card><style>.wrap{padding:28px;text-align:center}.label{color:var(--secondary-text-color);text-transform:uppercase;font-size:12px}.route{font-size:34px;font-weight:700;margin:10px}.flight{font-size:17px}.times{margin-top:10px;line-height:1.55}</style><div class="wrap"><div class="label">Next scheduled flight</div><div class="route">${escapeHtml(origin)} → ${escapeHtml(destination)}</div><div class="flight">${escapeHtml(flight?.state || "—")}</div><div class="times"><b>Device time:</b> ${escapeHtml(device)}<br><b>${escapeHtml(airport)} time:</b> ${escapeHtml(local)}</div></div></ha-card>`;
+      const trip = this._hass.states[this.config.trip_entity];
+      const hotel = trip?.attributes?.current_hotel;
+      const hotelPhone = trip?.attributes?.current_hotel_phone;
+      const layoverAirport = trip?.attributes?.current_layover_airport;
+      this.innerHTML = `<ha-card><style>.wrap{padding:28px;text-align:center}.label{color:var(--secondary-text-color);text-transform:uppercase;font-size:12px}.route{font-size:34px;font-weight:700;margin:10px}.flight{font-size:17px}.times{margin-top:10px;line-height:1.55}.hotel{margin-top:18px;padding-top:16px;border-top:1px solid var(--divider-color);font-size:17px;line-height:1.45}</style><div class="wrap"><div class="label">Next scheduled flight</div><div class="route">${escapeHtml(origin)} → ${escapeHtml(destination)}</div><div class="flight">${escapeHtml(flight?.state || "—")}</div><div class="times"><b>Device time:</b> ${escapeHtml(device)}<br><b>${escapeHtml(airport)} time:</b> ${escapeHtml(local)}</div>${hotel ? `<div class="hotel"><div class="label">Layover hotel · ${escapeHtml(layoverAirport || "")}</div><b>${escapeHtml(hotel)}</b>${hotelPhone ? `<br>${escapeHtml(hotelPhone)}` : ""}</div>` : ""}</div></ha-card>`;
       return;
     }
     this.innerHTML = `<ha-card><div id="map"></div></ha-card>`;

@@ -37,6 +37,16 @@ _REPORT_DELAY = re.compile(
     r"(?P<arrival_zone>[A-Z]{3,4})\b",
     re.IGNORECASE,
 )
+_REPORT_TIME = re.compile(
+    r"\bReport\s*:?[ ]*(?P<time>\d{1,2}:\d{2})\s*(?P<zone>[A-Z]{3,4})\b",
+    re.IGNORECASE,
+)
+_LAYOVER_HOTEL = re.compile(
+    r"\bLayover\s+\d+\s*hr\s+\d+\s*m\s+"
+    r"(?P<hotel>[^\n(]+?)\s+"
+    r"(?P<phone>\(\d{3}\)\s*\d{3}[- ]\d{4}|\d{3}[- ]?\d{3}[- ]?\d{4})\b",
+    re.IGNORECASE,
+)
 _MONTHS = {name: number for number, name in enumerate(
     ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1
 )}
@@ -61,6 +71,8 @@ class CrewHubCalendarProvider:
         legs: list[FlightLeg] = []
         gate_returns = 0
         report_delays = 0
+        hotels_by_duty: dict[int, dict[str, str]] = {}
+        reports_by_duty: dict[int, datetime] = {}
         previous_date: date | None = None
         for duty_period, day_match in enumerate(day_matches, 1):
             next_start = day_matches[duty_period].start() if duty_period < len(day_matches) else len(cleaned)
@@ -136,8 +148,38 @@ class CrewHubCalendarProvider:
                     status=LegStatus.SKIPPED, duty_period=duty_period, qualifier="GR",
                 ))
                 gate_returns += 1
+            duty_legs = [leg for leg in legs if leg.duty_period == duty_period]
+            report_match = _REPORT_TIME.search(section)
+            if report_match and duty_legs:
+                report_airport = duty_legs[0].origin
+                report_zone = ZoneInfo(self._airport_timezone(report_airport))
+                report_time = self._at(service_date, report_match.group("time"), report_zone)
+                self._validate_abbreviation(report_time, report_match.group("zone"), report_airport)
+                reports_by_duty[duty_period] = report_time
+            hotel_match = _LAYOVER_HOTEL.search(section)
+            if hotel_match:
+                hotels_by_duty[duty_period] = {
+                    "hotel": " ".join(hotel_match.group("hotel").split()),
+                    "phone": " ".join(hotel_match.group("phone").split()),
+                }
         if not legs:
             raise ScheduleParseError("No CrewHub flight legs found")
+
+        layovers: list[dict[str, str | int]] = []
+        for duty_period, hotel in hotels_by_duty.items():
+            duty_legs = [leg for leg in legs if leg.duty_period == duty_period]
+            next_duty = duty_period + 1
+            if not duty_legs or next_duty not in reports_by_duty:
+                continue
+            final_leg = max(duty_legs, key=lambda leg: leg.scheduled_arrival)
+            layovers.append({
+                "duty_period": duty_period,
+                "airport": final_leg.destination,
+                "hotel": hotel["hotel"],
+                "phone": hotel["phone"],
+                "start": final_leg.scheduled_arrival.isoformat(),
+                "end": reports_by_duty[next_duty].isoformat(),
+            })
 
         pairing = re.search(r"(?i)\bTrip\s*:\s*([A-Z0-9-]+)", cleaned)
         trip_id = identifier or (pairing.group(1).upper() if pairing else legs[0].date)
@@ -149,6 +191,7 @@ class CrewHubCalendarProvider:
                 "calendar_anchor_date": anchor_date.isoformat(),
                 "gate_return_count": gate_returns,
                 "report_delay_count": report_delays,
+                "layovers": layovers,
             },
         )
 

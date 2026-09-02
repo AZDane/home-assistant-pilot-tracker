@@ -10,6 +10,7 @@ position and schedule as Home Assistant entities and dashboard cards.
 - Supports compact PDF text and tabular print-view text.
 - Understands Herb, Local, and Domicile schedule time modes.
 - Recognizes `DV` diversion segments and same-number continuation legs.
+- Shows the current CrewHub layover hotel and phone number during the layover.
 - Tracks the positively identified aircraft through FlightRadar24.
 - Exposes current and next flight, route, status, diagnostics, and
   `device_tracker.pilot` entities.
@@ -90,6 +91,8 @@ The dashboard Schedule Manager labels every entry as **Calendar** or **Pasted**;
 expanded calendar entries also show the originating calendar event summary.
 When a calendar event matches a pasted pairing, the calendar version becomes
 authoritative and future event revisions update that schedule in place.
+When CrewHub supplies a layover hotel and telephone number, both dashboard
+cards display it from the preceding duty's arrival until the next report time.
 
 Flattened Google Calendar descriptions are supported. CrewHub gate-return
 records such as `882 PHX MST PHX MST` are retained as `GR` operational records

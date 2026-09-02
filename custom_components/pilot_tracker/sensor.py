@@ -1,5 +1,7 @@
 """Pilot Tracker status sensors."""
 
+from datetime import datetime
+
 from zoneinfo import ZoneInfo
 
 from homeassistant.components.sensor import SensorEntity
@@ -86,6 +88,7 @@ class TripSensor(BaseSensor):
     @property
     def extra_state_attributes(self):
         trip = self.coordinator.trip
+        layover = _current_layover(trip)
         return ({
             "source": trip.source,
             "schedule_time_mode": trip.metadata.get("schedule_time_mode", "herb"),
@@ -94,12 +97,32 @@ class TripSensor(BaseSensor):
             "revision_date": trip.revision_date,
             "archived_trip_count": self.coordinator.store.archived_count,
             "loaded_trip_count": len(self.coordinator.store.trips),
+            "current_hotel": layover.get("hotel") if layover else None,
+            "current_hotel_phone": layover.get("phone") if layover else None,
+            "current_layover_airport": layover.get("airport") if layover else None,
+            "current_layover_until": layover.get("end") if layover else None,
             "schedules": _schedule_summaries(self.coordinator, trip),
         } if trip else {
             "archived_trip_count": self.coordinator.store.archived_count,
             "loaded_trip_count": len(self.coordinator.store.trips),
             "schedules": _schedule_summaries(self.coordinator, None),
         })
+
+
+def _current_layover(trip):
+    """Return the calendar-provided hotel only during its layover interval."""
+    if not trip:
+        return None
+    now = datetime.now().astimezone()
+    for layover in trip.metadata.get("layovers", []):
+        try:
+            start = datetime.fromisoformat(layover["start"])
+            end = datetime.fromisoformat(layover["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if start <= now < end:
+            return layover
+    return None
 
 
 class CurrentFlightSensor(BaseSensor):

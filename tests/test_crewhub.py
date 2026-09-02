@@ -186,3 +186,43 @@ Synced from CrewHub BYO Version 8.5.1"""
     assert first_flight.scheduled_departure.isoformat() == "2026-08-21T18:27:00-07:00"
     assert first_flight.scheduled_arrival.isoformat() == "2026-08-22T00:53:00-04:00"
     assert trip.metadata["report_delay_count"] == 1
+
+
+def test_calendar_layover_hotel_is_associated_with_duty_interval():
+    text = """LOCAL
+Thu Sep 10
+Report 15:05 MST
+2327 PHX 16:05 MST PDX 21:50 PDT
+Duty 7:15 Block 4:25 Credit 5.37
+Layover 12hr 45m
+Sheraton Airport
+(503) 281-2500
+Hotel Shuttle
+Fri Sep 11
+Report 11:05 PDT
+1351 PDX 11:35 PDT JAX 22:05 EDT
+"""
+    trip = CrewHubCalendarProvider(ZONES.__getitem__).parse(
+        text, anchor_date=date(2026, 9, 10)
+    )
+
+    assert trip.metadata["layovers"] == [{
+        "duty_period": 1,
+        "airport": "PDX",
+        "hotel": "Sheraton Airport",
+        "phone": "(503) 281-2500",
+        "start": "2026-09-10T21:50:00-07:00",
+        "end": "2026-09-11T11:05:00-07:00",
+    }]
+
+
+def test_flattened_calendar_layover_hotel_is_supported():
+    text = """LOCAL Thu Sep 10 Report 15:05 MST
+2327 PHX 16:05 MST PDX 21:50 PDT Duty 7:15 Block 4:25
+Layover 12hr 45m Sheraton Airport (503) 281-2500 Hotel Shuttle
+Fri Sep 11 Report 11:05 PDT 1351 PDX 11:35 PDT JAX 22:05 EDT"""
+    trip = CrewHubCalendarProvider(ZONES.__getitem__).parse(
+        text, anchor_date=date(2026, 9, 10)
+    )
+
+    assert trip.metadata["layovers"][0]["hotel"] == "Sheraton Airport"
