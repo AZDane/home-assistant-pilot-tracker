@@ -46,6 +46,17 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     async def complete_leg(call):
         await coordinator().async_manually_complete_current_leg()
 
+    async def configure_calendar(call):
+        entity_id = call.data[CONF_CALENDAR_ENTITY]
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            raise ValueError("Pilot Tracker config entry is unavailable")
+        entry = entries[0]
+        options = dict(entry.options)
+        options[CONF_CALENDAR_ENTITY] = entity_id
+        hass.config_entries.async_update_entry(entry, options=options)
+        await coordinator().async_configure_calendar(entity_id)
+
     hass.services.async_register(
         DOMAIN, "import_schedule", import_schedule,
         schema=vol.Schema({vol.Required("schedule_text"): cv.string}),
@@ -60,6 +71,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     )
     hass.services.async_register(DOMAIN, "reset_aircraft", reset_aircraft)
     hass.services.async_register(DOMAIN, "complete_current_leg", complete_leg)
+    hass.services.async_register(
+        DOMAIN, "configure_calendar", configure_calendar,
+        schema=vol.Schema({vol.Required(CONF_CALENDAR_ENTITY): cv.entity_id}),
+    )
     return True
 
 

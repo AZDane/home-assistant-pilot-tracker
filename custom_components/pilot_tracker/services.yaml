@@ -32,3 +32,13 @@ reset_aircraft:
 complete_current_leg:
   name: Confirm arrival
   description: Manually complete the current active leg after independently confirming arrival.
+configure_calendar:
+  name: Configure calendar import
+  description: Select the Home Assistant calendar entity used for automatic CrewHub synchronization.
+  fields:
+    calendar_entity:
+      name: Flight calendar
+      required: true
+      selector:
+        entity:
+          domain: calendar

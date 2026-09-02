@@ -55,28 +55,18 @@ registration error in the browser.
 4. Open **Settings → Devices & services → Add integration**, then search for
    **Pilot Tracker**.
 
-## Import a schedule
+## Recommended setup: Google Calendar / CrewHub synchronization
 
-Open **Settings → Devices & services → Pilot Tracker → Configure**, choose
-**Import schedule**, and paste either:
+Google Calendar is the primary and recommended import method because CrewHub
+can revise flight times, routes, hotels, and other trip details without another
+manual paste. First configure Google Calendar in Home Assistant. Then add
+`type: custom:pilot-tracker-card` to a dashboard and select the CrewHub
+`calendar.*` entity in **Schedule Manager**. The selection is saved and remains
+active after restarts. The same selection remains available under **Settings →
+Devices & services → Pilot Tracker → Configure → Configure calendar import**.
 
-- Full pairing-detail text, including the heading that identifies Herb Time,
-  Local Time, or Domicile Time.
-- Compact local-time roster rows in the form
-  `08/14/2026 3445 PHX 1640 SDF 2305`. Every departure and arrival is
-  interpreted in that airport's local time. A trailing `Sent from my iPhone`
-  line is accepted and ignored.
-
-A compact single pairing is identified by its first date. A multi-pairing
-monthly roster is identified by its dominant month, including a carry-in leg
-from the preceding month.
-
-### Google Calendar / CrewHub synchronization
-
-If Google Calendar is already configured in Home Assistant, open **Pilot
-Tracker → Configure → Configure calendar import** and select the `calendar.*`
-entity containing CrewHub pairing events. Pilot Tracker uses Home Assistant's
-calendar API and never handles Google credentials directly.
+Pilot Tracker uses Home Assistant's calendar API and never receives or stores
+Google credentials directly.
 
 Recognized CrewHub descriptions begin with `LOCAL`, contain dated duty headings
 such as `Thu Sep 10`, and flight rows such as
@@ -93,6 +83,23 @@ When a calendar event matches a pasted pairing, the calendar version becomes
 authoritative and future event revisions update that schedule in place.
 When CrewHub supplies a layover hotel and telephone number, both dashboard
 cards display it from the preceding duty's arrival until the next report time.
+
+## Optional manual import
+
+Manual paste remains available as a fallback for schedules that are not in the
+calendar. In the Pilot Tracker card, choose **Import schedule** and paste either:
+
+- Full pairing-detail text, including the heading that identifies Herb Time,
+  Local Time, or Domicile Time.
+- Compact local-time roster rows in the form
+  `08/14/2026 3445 PHX 1640 SDF 2305`. Every departure and arrival is
+  interpreted in that airport's local time. A trailing `Sent from my iPhone`
+  line is accepted and ignored.
+
+A compact single pairing is identified by its first date. A multi-pairing
+monthly roster is identified by its dominant month, including a carry-in leg
+from the preceding month. When a matching CrewHub calendar event exists, the
+calendar-managed schedule becomes authoritative over the pasted copy.
 
 Flattened Google Calendar descriptions are supported. CrewHub gate-return
 records such as `882 PHX MST PHX MST` are retained as `GR` operational records

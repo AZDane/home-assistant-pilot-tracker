@@ -245,14 +245,17 @@ class PilotTrackerCard extends HTMLElement {
       this.config.current_destination_entity, this.config.next_flight_entity,
       this.config.next_origin_entity, this.config.next_destination_entity,
       this.config.tracking_entity, this.config.map_entity];
-    return JSON.stringify(ids.map((id) => {
+    const entityState = ids.map((id) => {
       const state = this._hass.states[id];
       if (!state) return null;
       return [state.state, state.attributes.schedules, state.attributes.last_candidate_rejection,
         state.attributes.last_candidate_rejection_detail,
         state.attributes.tracked_flights, state.attributes.position_fresh,
-        state.attributes.scheduled_departure, state.attributes.scheduled_arrival];
-    }));
+        state.attributes.scheduled_departure, state.attributes.scheduled_arrival,
+        state.attributes.calendar_entity_id];
+    });
+    const calendars = Object.keys(this._hass.states).filter((id) => id.startsWith("calendar.")).sort();
+    return JSON.stringify([entityState, calendars]);
   }
 
   render() {
@@ -273,6 +276,11 @@ class PilotTrackerCard extends HTMLElement {
     const currentHotel = this.attr(this.config.trip_entity, "current_hotel");
     const hotelPhone = this.attr(this.config.trip_entity, "current_hotel_phone");
     const layoverAirport = this.attr(this.config.trip_entity, "current_layover_airport");
+    const configuredCalendar = this.attr(this.config.tracking_entity, "calendar_entity_id", "");
+    const calendars = Object.values(this._hass.states)
+      .filter((state) => state.entity_id.startsWith("calendar."))
+      .sort((left, right) => String(left.attributes.friendly_name || left.entity_id)
+        .localeCompare(String(right.attributes.friendly_name || right.entity_id)));
     this.innerHTML = `
       <ha-card>
         <style>
@@ -297,6 +305,8 @@ class PilotTrackerCard extends HTMLElement {
           button { border:0; border-radius:18px; padding:9px 14px; cursor:pointer; color:var(--primary-text-color); background:var(--secondary-background-color); }
           button.primary { background:var(--primary-color); color:var(--text-primary-color); }
           .schedules { padding:0 20px 20px; }
+          .calendar-config { display:flex; gap:8px; align-items:center; margin:8px 0 18px; }
+          .calendar-config select { flex:1; min-width:0; box-sizing:border-box; padding:11px; border:1px solid var(--divider-color); border-radius:10px; color:var(--primary-text-color); background:var(--card-background-color); }
           .schedule-picker { width:100%; box-sizing:border-box; margin:8px 0 12px; padding:11px; border:1px solid var(--divider-color); border-radius:10px; color:var(--primary-text-color); background:var(--card-background-color); }
           .schedule-detail { border:1px solid var(--divider-color); border-radius:12px; overflow:hidden; }
           .schedule-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px; background:var(--secondary-background-color); }
@@ -340,6 +350,7 @@ class PilotTrackerCard extends HTMLElement {
           ${current !== "none" ? `<button id="arrival">Confirm arrival</button>` : ""}
         </div>
         <div class="schedules"><div class="label">Schedule manager</div>
+          ${calendars.length ? `<div class="calendar-config"><select id="calendar-select" aria-label="CrewHub flight calendar">${calendars.map((state) => `<option value="${escapeHtml(state.entity_id)}" ${state.entity_id === configuredCalendar ? "selected" : ""}>${escapeHtml(state.attributes.friendly_name || state.entity_id)} · ${escapeHtml(state.entity_id)}</option>`).join("")}</select><button class="primary" id="calendar-save">${configuredCalendar ? "Change calendar" : "Use calendar"}</button></div>` : `<div class="schedule-meta">No Home Assistant calendar entities are available.</div>`}
           ${schedules.length ? `
             <select class="schedule-picker" id="schedule-select" aria-label="Select a loaded schedule">
               ${schedules.map((item) => `<option value="${escapeHtml(item.key)}" ${item.key === selectedSchedule?.key ? "selected" : ""}>${escapeHtml(item.trip_id)} · ${escapeHtml(item.start)}–${escapeHtml(item.end)} · ${item.leg_count} legs${item.calendar_managed ? " · Calendar" : " · Pasted"}${item.selected ? " · active" : ""}${item.conflicting ? " · conflict" : ""}</option>`).join("")}
@@ -430,6 +441,10 @@ class PilotTrackerCard extends HTMLElement {
     q("#submit")?.addEventListener("click", async () => {
       await this._hass.callService("pilot_tracker", "import_schedule", {schedule_text:q("#schedule-text").value});
       q("#import-dialog").close();
+    });
+    q("#calendar-save")?.addEventListener("click", async () => {
+      const entity = q("#calendar-select")?.value;
+      if (entity) await this._hass.callService("pilot_tracker", "configure_calendar", {calendar_entity:entity});
     });
     q("#aircraft")?.addEventListener("click", () => this.confirmCall("Accept the newly detected aircraft for this leg?", "reset_aircraft"));
     q("#arrival")?.addEventListener("click", () => this.confirmCall("Confirm that the current flight has arrived?", "complete_current_leg"));
