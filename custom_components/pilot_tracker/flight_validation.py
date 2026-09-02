@@ -59,12 +59,12 @@ def validate_candidate(leg: FlightLeg, flight: dict[str, Any]) -> CandidateResul
     origin = route_code(flight, "origin")
     if not origin:
         return CandidateResult(False, "missing_origin_data")
-    if not route_matches(origin, leg.origin):
+    if not route_matches(origin, leg.origin) and leg.qualifier != "DV-CONT":
         return CandidateResult(False, "origin_mismatch")
     destination = route_code(flight, "destination")
     if not destination:
         return CandidateResult(False, "missing_destination_data")
-    if not route_matches(destination, leg.destination):
+    if not route_matches(destination, leg.destination) and leg.qualifier != "DV":
         return CandidateResult(False, "destination_mismatch")
     scheduled = flight.get("time_scheduled_departure")
     if not isinstance(scheduled, (int, float)):

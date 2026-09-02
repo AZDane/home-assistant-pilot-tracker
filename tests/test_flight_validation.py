@@ -66,3 +66,25 @@ def test_rejects_route_and_airline_mismatch():
     flight = candidate(leg)
     flight["airline_iata"] = "AA"
     assert validate_candidate(leg, flight).reason == "airline_mismatch"
+
+
+def test_diversion_segments_accept_original_through_route():
+    trip = SouthwestPairingProvider().parse("""Trip DIV1 dated 20Jun26
+HERB TIME/ESTIMATED
+20 Jun 296 ELP 0102 DAL 0358 7A8 256 130 DV
+20 Jun 296 DAL 0528 SAT 0626 7A8 058
+""")
+    diverted, continuation = trip.legs
+    flight = candidate(diverted)
+    flight.update({
+        "flight_number": "WN296",
+        "airport_origin_code_iata": "ELP",
+        "airport_destination_code_iata": "SAT",
+    })
+
+    assert diverted.qualifier == "DV"
+    assert validate_candidate(diverted, flight).accepted
+
+    flight["time_scheduled_departure"] = continuation.scheduled_departure.timestamp()
+    assert continuation.qualifier == "DV-CONT"
+    assert validate_candidate(continuation, flight).accepted

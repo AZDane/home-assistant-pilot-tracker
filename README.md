@@ -9,6 +9,7 @@ position and schedule as Home Assistant entities and dashboard cards.
 - Imports multiple pairings covering up to 62 days.
 - Supports compact PDF text and tabular print-view text.
 - Understands Herb, Local, and Domicile schedule time modes.
+- Recognizes `DV` diversion segments and same-number continuation legs.
 - Tracks the positively identified aircraft through FlightRadar24.
 - Exposes current and next flight, route, status, diagnostics, and
   `device_tracker.pilot` entities.
@@ -90,6 +91,12 @@ from FlightRadar24 tracking; Pilot Tracker proceeds to the next airborne leg.
 Delayed-report records such as `RPRT PHX 15:40 MST PHX 18:00 MST` are likewise
 retained as non-trackable `RPRT` records, while the following numbered flight
 remains the first flight submitted for live tracking.
+
+Pairing-detail diversions such as flight 296 ELP→DAL marked `DV`, followed by
+flight 296 DAL→SAT, are retained as two linked operational legs. Pilot Tracker
+can match FlightRadar24's original ELP→SAT through-route while using DAL as
+the actual arrival point for the diverted segment, then continues tracking the
+same flight number from DAL to SAT.
 
 The integration stores imported schedules in Home Assistant's local storage.
 It does not send pairing text or crew information to an external service. Only

@@ -94,6 +94,25 @@ Rpt 0715 Rls 1255
     assert (trip.legs[2].origin, trip.legs[2].destination) == ("DEN", "PHX")
 
 
+def test_parses_diversion_and_same_number_continuation():
+    text = """Trip DIV1 dated 19Jun26
+HERB TIME/ESTIMATED
+19 Jun 2254 PHX 2016 SAT 2213 7A8 157
+19 Jun 1822 SAT 2258 ELP 0033 7A8 135
+20 Jun 296 ELP 0102 DAL 0358 7A8 256 130 DV
+20 Jun 296 DAL 0528 SAT 0626 7A8 058
+Rpt 1725 Rls 0656
+"""
+    trip = SouthwestPairingProvider().parse(text)
+
+    assert [(leg.flight_number, leg.origin, leg.destination, leg.qualifier) for leg in trip.legs] == [
+        ("2254", "PHX", "SAT", None),
+        ("1822", "SAT", "ELP", None),
+        ("296", "ELP", "DAL", "DV"),
+        ("296", "DAL", "SAT", "DV-CONT"),
+    ]
+
+
 def test_parses_print_view_table_with_spaced_dates_and_on_header():
     trip = SouthwestPairingProvider().parse(PRINT_VIEW_TABLE)
 

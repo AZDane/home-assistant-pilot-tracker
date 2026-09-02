@@ -76,9 +76,24 @@ class SouthwestPairingProvider:
             if arrival <= departure:
                 arrival += timedelta(days=1)
             duty_period = 1 + len(re.findall(r"(?mi)^.*\bRls\s+\d{4}\b", text[:match.start()]))
+            line_end = text.find("\n", match.end())
+            row_tail = text[match.end():line_end if line_end >= 0 else len(text)]
+            qualifier = values.get("qualifier")
+            if re.search(r"\bDV\b", row_tail, re.IGNORECASE):
+                qualifier = "DV"
             legs.append(FlightLeg(sequence, service_date.isoformat(), values["flight"], "WN",
                                   values["origin"], values["destination"], departure, arrival,
-                                  duty_period=duty_period, qualifier=values.get("qualifier")))
+                                  duty_period=duty_period, qualifier=qualifier))
+        # A diversion is followed by a continuation bearing the same flight
+        # number from the diversion airport. Keep the records separate while
+        # linking their route-validation behavior.
+        for diverted, continuation in zip(legs, legs[1:], strict=False):
+            if (
+                diverted.qualifier == "DV"
+                and continuation.flight_number == diverted.flight_number
+                and continuation.origin == diverted.destination
+            ):
+                continuation.qualifier = "DV-CONT"
         if time_mode == "herb":
             time_basis = self.time_basis
         elif time_mode == "domicile":

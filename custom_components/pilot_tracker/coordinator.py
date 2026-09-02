@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .airports import airport_coordinates
 from .models import FlightLeg, LegStatus, Trip, TripStatus
 from .calendar_sync import CalendarScheduleSync
 from .flight_validation import validate_candidate
@@ -245,7 +246,15 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         event = self.tracking.last_event if event_matches_flight(
             self.tracking.last_event, leg.tracking_identifiers, leg
         ) else None
-        signals = arrival_signals(self.accepted_flight or {}, event)
+        arrival_flight = self.accepted_flight or {}
+        if leg.qualifier == "DV":
+            # FR24 may retain the originally filed destination after a divert.
+            # The pairing's diversion airport is authoritative for arrival.
+            if coordinates := airport_coordinates(leg.destination):
+                arrival_flight = dict(arrival_flight)
+                arrival_flight["airport_destination_latitude"] = coordinates[0]
+                arrival_flight["airport_destination_longitude"] = coordinates[1]
+        signals = arrival_signals(arrival_flight, event)
         previous_evidence = set(self.trip.metadata.get("arrival_evidence", []))
         previous_samples = int(self.trip.metadata.get("ground_near_samples", 0))
         evidence = previous_evidence | signals
