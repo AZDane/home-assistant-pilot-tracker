@@ -98,7 +98,7 @@ class CalendarScheduleSync:
                         # not duplicate an already synchronized pairing.
                         trip.trip_id = legacy_id
                     fingerprint = hashlib.sha256(
-                        b"crewhub-v2\0" + html_text(description).encode()
+                        b"crewhub-v3\0" + html_text(description).encode()
                     ).hexdigest()
                     trip.metadata.update({
                         "calendar_entity_id": self.entity_id,

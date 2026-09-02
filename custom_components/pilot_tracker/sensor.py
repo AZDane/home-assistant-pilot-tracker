@@ -263,6 +263,7 @@ def _schedule_summaries(coordinator, selected_trip):
                     "arrival_display": leg.scheduled_arrival.strftime("%H:%M %Z"),
                     **_leg_time_displays(leg, trip),
                     "status": leg.status.value,
+                    "qualifier": leg.qualifier,
                     "duty_period": leg.duty_period,
                 }
                 for leg in trip.legs

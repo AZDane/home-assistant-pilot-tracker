@@ -136,3 +136,53 @@ def test_flattened_calendar_text_and_gate_return_are_supported():
     assert trip.metadata["gate_return_count"] == 1
     following = trip.legs[gate_return.sequence]
     assert (following.origin, following.destination) == ("PHX", "ABQ")
+
+
+def test_delayed_report_is_retained_but_not_trackable():
+    text = """LOCAL\\
+\\
+Fri Aug 21\\
+Report 15:40 MST\\
+RPRT PHX 15:40 MST PHX 18:00 MST\\
+3445 PHX 18:27 MST SDF 00:53 EDT\\
+Duty 6:43 Block 3:26 Credit 5.00 M\\
+\\
+Sat Aug 22\\
+Report 16:20 EDT\\
+4898 SDF 16:45 EDT LAS 17:38 PDT\\
+1263 LAS 18:51 PDT SNA 19:49 PDT\\
+\\
+Sun Aug 23\\
+Report 11:45 PDT\\
+2761 SNA 12:15 PDT SMF 13:45 PDT\\
+3751 SMF 14:17 PDT SNA 15:39 PDT\\
+3770 SNA 19:25 PDT OAK 20:41 PDT\\
+4647 OAK 21:25 PDT PHX 00:33 MST\\
+Synced from CrewHub BYO Version 8.5.1"""
+    zones = {
+        **ZONES,
+        "SDF": "America/Kentucky/Louisville",
+        "LAS": "America/Los_Angeles",
+        "SNA": "America/Los_Angeles",
+        "SMF": "America/Los_Angeles",
+    }
+
+    trip = CrewHubCalendarProvider(zones.__getitem__).parse(
+        text, anchor_date=date(2026, 8, 21)
+    )
+
+    assert len(trip.legs) == 8
+    report_delay = trip.legs[0]
+    assert report_delay.flight_number == report_delay.qualifier == "RPRT"
+    assert report_delay.airline == ""
+    assert report_delay.origin == report_delay.destination == "PHX"
+    assert report_delay.status.value == "skipped"
+    assert report_delay.scheduled_departure.isoformat() == "2026-08-21T15:40:00-07:00"
+    assert report_delay.scheduled_arrival.isoformat() == "2026-08-21T18:00:00-07:00"
+    first_flight = trip.legs[1]
+    assert (first_flight.flight_number, first_flight.origin, first_flight.destination) == (
+        "3445", "PHX", "SDF"
+    )
+    assert first_flight.scheduled_departure.isoformat() == "2026-08-21T18:27:00-07:00"
+    assert first_flight.scheduled_arrival.isoformat() == "2026-08-22T00:53:00-04:00"
+    assert trip.metadata["report_delay_count"] == 1

@@ -30,6 +30,13 @@ _GATE_RETURN = re.compile(
     r"(?P<arrival_zone>[A-Z]{3,4})\b",
     re.IGNORECASE,
 )
+_REPORT_DELAY = re.compile(
+    r"\bRPRT\s+(?P<origin>[A-Z]{3})\s+"
+    r"(?P<departure>\d{1,2}:\d{2})\s*(?P<departure_zone>[A-Z]{3,4})\s+"
+    r"(?P<destination>[A-Z]{3})\s+(?P<arrival>\d{1,2}:\d{2})\s*"
+    r"(?P<arrival_zone>[A-Z]{3,4})\b",
+    re.IGNORECASE,
+)
 _MONTHS = {name: number for number, name in enumerate(
     ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1
 )}
@@ -53,6 +60,7 @@ class CrewHubCalendarProvider:
 
         legs: list[FlightLeg] = []
         gate_returns = 0
+        report_delays = 0
         previous_date: date | None = None
         for duty_period, day_match in enumerate(day_matches, 1):
             next_start = day_matches[duty_period].start() if duty_period < len(day_matches) else len(cleaned)
@@ -65,6 +73,9 @@ class CrewHubCalendarProvider:
             movements: list[tuple[int, str, re.Match[str]]] = [
                 (match.start(), "flight", match) for match in _FLIGHT.finditer(section)
             ]
+            movements.extend(
+                (match.start(), "report_delay", match) for match in _REPORT_DELAY.finditer(section)
+            )
             movements.extend(
                 (match.start(), "gate_return", match) for match in _GATE_RETURN.finditer(section)
                 if not any(full.start() <= match.start() < full.end() for full in _FLIGHT.finditer(section))
@@ -90,10 +101,16 @@ class CrewHubCalendarProvider:
                     arrival += timedelta(days=1)
                 self._validate_abbreviation(departure, values["departure_zone"], origin)
                 self._validate_abbreviation(arrival, values["arrival_zone"], destination)
+                is_report_delay = kind == "report_delay"
                 parsed.append(FlightLeg(
-                    0, service_date.isoformat(), values["flight"], "WN",
+                    0, service_date.isoformat(), "RPRT" if is_report_delay else values["flight"],
+                    "" if is_report_delay else "WN",
                     origin, destination, departure, arrival, duty_period=duty_period,
+                    status=LegStatus.SKIPPED if is_report_delay else LegStatus.PENDING,
+                    qualifier="RPRT" if is_report_delay else None,
                 ))
+                if is_report_delay:
+                    report_delays += 1
             for index, movement in enumerate(parsed):
                 if isinstance(movement, FlightLeg):
                     movement.sequence = len(legs) + 1
@@ -131,6 +148,7 @@ class CrewHubCalendarProvider:
                 "format": "crewhub_calendar",
                 "calendar_anchor_date": anchor_date.isoformat(),
                 "gate_return_count": gate_returns,
+                "report_delay_count": report_delays,
             },
         )
 

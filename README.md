@@ -87,6 +87,9 @@ Flattened Google Calendar descriptions are supported. CrewHub gate-return
 records such as `882 PHX MST PHX MST` are retained as `GR` operational records
 when their interval can be inferred from surrounding flights, but are excluded
 from FlightRadar24 tracking; Pilot Tracker proceeds to the next airborne leg.
+Delayed-report records such as `RPRT PHX 15:40 MST PHX 18:00 MST` are likewise
+retained as non-trackable `RPRT` records, while the following numbered flight
+remains the first flight submitted for live tracking.
 
 The integration stores imported schedules in Home Assistant's local storage.
 It does not send pairing text or crew information to an external service. Only

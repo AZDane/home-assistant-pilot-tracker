@@ -105,7 +105,8 @@ class PilotTrackerOptionsFlow(OptionsFlowWithConfigEntry):
         trip = self._coordinator.store.get(user_input["trip_key"])
         if trip:
             legs = "\n".join(
-                f"{leg.sequence}. {leg.date} WN{leg.flight_number} {leg.origin} -> {leg.destination} ({leg.status.value})"
+                f"{leg.sequence}. {leg.date} {leg.airline}{leg.flight_number} "
+                f"{leg.origin} -> {leg.destination} ({leg.status.value})"
                 for leg in trip.legs
             )
             summary = f"Trip {trip.trip_id} - {len(trip.legs)} legs\n{legs}"
