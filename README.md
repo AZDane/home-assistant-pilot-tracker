@@ -68,15 +68,11 @@ Devices & services → Pilot Tracker → Configure → Configure calendar import
 Pilot Tracker uses Home Assistant's calendar API and never receives or stores
 Google credentials directly.
 
-Recognized CrewHub descriptions begin with `LOCAL`, contain dated duty headings
-such as `Thu Sep 10`, and flight rows such as
-`2327 PHX 16:05 MST LAX 17:30 PDT`. Pilot Tracker synchronizes every five
-minutes and whenever the calendar entity updates. Revisions update the same
-pairing. Removing a calendar event does not automatically delete a stored or
-actively tracked trip; remove it explicitly from Pilot Tracker if needed.
-Exact duplicates stored under both an older `CAL-YYYY-MM-DD` identifier and a
-CrewHub pairing identifier are consolidated automatically. The pairing
-identifier and any completed or actively tracked leg state are retained.
+Recognized CrewHub trip events are imported automatically. Pilot Tracker
+synchronizes every five minutes and whenever the calendar entity updates.
+Revisions update the matching pairing while preserving completed or active
+flight progress. Non-flight calendar events are ignored, and equivalent
+calendar and pasted schedules are consolidated automatically.
 The dashboard Schedule Manager labels every entry as **Calendar** or **Pasted**;
 expanded calendar entries also show the originating calendar event summary.
 When a calendar event matches a pasted pairing, the calendar version becomes
@@ -91,29 +87,18 @@ calendar. In the Pilot Tracker card, choose **Import schedule** and paste either
 
 - Full pairing-detail text, including the heading that identifies Herb Time,
   Local Time, or Domicile Time.
-- Compact local-time roster rows in the form
-  `08/14/2026 3445 PHX 1640 SDF 2305`. Every departure and arrival is
-  interpreted in that airport's local time. A trailing `Sent from my iPhone`
-  line is accepted and ignored.
+- Compact local-time roster text. Every departure and arrival is interpreted
+  in the corresponding airport's local time.
 
 A compact single pairing is identified by its first date. A multi-pairing
 monthly roster is identified by its dominant month, including a carry-in leg
 from the preceding month. When a matching CrewHub calendar event exists, the
 calendar-managed schedule becomes authoritative over the pasted copy.
 
-Flattened Google Calendar descriptions are supported. CrewHub gate-return
-records such as `882 PHX MST PHX MST` are retained as `GR` operational records
-when their interval can be inferred from surrounding flights, but are excluded
-from FlightRadar24 tracking; Pilot Tracker proceeds to the next airborne leg.
-Delayed-report records such as `RPRT PHX 15:40 MST PHX 18:00 MST` are likewise
-retained as non-trackable `RPRT` records, while the following numbered flight
-remains the first flight submitted for live tracking.
-
-Pairing-detail diversions such as flight 296 ELP→DAL marked `DV`, followed by
-flight 296 DAL→SAT, are retained as two linked operational legs. Pilot Tracker
-can match FlightRadar24's original ELP→SAT through-route while using DAL as
-the actual arrival point for the diverted segment, then continues tracking the
-same flight number from DAL to SAT.
+Both normally formatted and flattened calendar descriptions are supported.
+Pilot Tracker understands common operational changes—including deadheads,
+gate returns, delayed reports, diversions, aircraft changes, and continuation
+segments—without treating non-airborne records as live flights.
 
 The integration stores imported schedules in Home Assistant's local storage.
 It does not send pairing text or crew information to an external service. Only
