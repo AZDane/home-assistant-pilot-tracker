@@ -338,7 +338,7 @@ class PilotTrackerCard extends HTMLElement {
         <div class="schedules"><div class="label">Schedule manager</div>
           ${schedules.length ? `
             <select class="schedule-picker" id="schedule-select" aria-label="Select a loaded schedule">
-              ${schedules.map((item) => `<option value="${escapeHtml(item.key)}" ${item.key === selectedSchedule?.key ? "selected" : ""}>${escapeHtml(item.trip_id)} · ${escapeHtml(item.start)}–${escapeHtml(item.end)} · ${item.leg_count} legs${item.selected ? " · active" : ""}${item.conflicting ? " · conflict" : ""}</option>`).join("")}
+              ${schedules.map((item) => `<option value="${escapeHtml(item.key)}" ${item.key === selectedSchedule?.key ? "selected" : ""}>${escapeHtml(item.trip_id)} · ${escapeHtml(item.start)}–${escapeHtml(item.end)} · ${item.leg_count} legs${item.calendar_managed ? " · Calendar" : " · Pasted"}${item.selected ? " · active" : ""}${item.conflicting ? " · conflict" : ""}</option>`).join("")}
             </select>
             <button id="schedule-toggle">${this._scheduleExpanded ? "Hide schedule" : "View schedule"}</button>
             ${this._scheduleExpanded ? this.scheduleDetail(selectedSchedule) : ""}
@@ -382,8 +382,11 @@ class PilotTrackerCard extends HTMLElement {
 
   scheduleDetail(schedule) {
     if (!schedule) return "";
+    const source = schedule.calendar_managed
+      ? `Calendar${schedule.calendar_summary ? ` · ${escapeHtml(schedule.calendar_summary)}` : ""}`
+      : "Pasted import";
     return `<div class="schedule-detail">
-      <div class="schedule-head"><div><b>${escapeHtml(schedule.trip_id)}</b>${schedule.selected ? " · Active" : ""}${schedule.conflicting ? " · Conflict" : ""}<div class="schedule-meta">${escapeHtml(schedule.start)}–${escapeHtml(schedule.end)} · ${schedule.leg_count} legs · ${escapeHtml(this.pretty(schedule.time_mode))} time</div></div></div>
+      <div class="schedule-head"><div><b>${escapeHtml(schedule.trip_id)}</b>${schedule.selected ? " · Active" : ""}${schedule.conflicting ? " · Conflict" : ""}<div class="schedule-meta">${source} · ${escapeHtml(schedule.start)}–${escapeHtml(schedule.end)} · ${schedule.leg_count} legs · ${escapeHtml(this.pretty(schedule.time_mode))} time</div></div></div>
       <div class="leg-table"><table class="legs"><thead><tr><th>Date</th><th>Flight</th><th>Route</th><th>Duty</th><th>Departure</th><th>Arrival</th><th>Status</th></tr></thead><tbody>
         ${(schedule.legs || []).map((leg) => `<tr><td>${escapeHtml(this.shortDate(leg.departure))}</td><td><b>${escapeHtml(leg.flight)}</b></td><td class="leg-route">${escapeHtml(leg.origin)} → ${escapeHtml(leg.destination)}</td><td>${escapeHtml(leg.duty_period)}</td><td><b>Device:</b> ${escapeHtml(this.formatDeviceTime(leg.departure))}<br><b>${escapeHtml(leg.origin_icao || leg.origin)}:</b> ${escapeHtml(leg.departure_local_display)}</td><td><b>Device:</b> ${escapeHtml(this.formatDeviceTime(leg.arrival))}<br><b>${escapeHtml(leg.destination_icao || leg.destination)}:</b> ${escapeHtml(leg.arrival_local_display)}</td><td>${escapeHtml(this.pretty(leg.status))}${leg.qualifier ? ` · ${escapeHtml(leg.qualifier)}` : ""}</td></tr>`).join("")}
       </tbody></table></div>

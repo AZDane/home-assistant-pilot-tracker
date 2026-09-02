@@ -251,6 +251,10 @@ def _schedule_summaries(coordinator, selected_trip):
             "selected": bool(selected_trip and trip.key == selected_trip.key),
             "conflicting": trip.key in coordinator.schedule_conflicts,
             "time_mode": trip.metadata.get("schedule_time_mode", "herb"),
+            "source": trip.source,
+            "calendar_managed": trip.source == "crewhub_calendar",
+            "calendar_entity_id": trip.metadata.get("calendar_entity_id"),
+            "calendar_summary": trip.metadata.get("calendar_summary"),
             "legs": [
                 {
                     "sequence": leg.sequence,

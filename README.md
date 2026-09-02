@@ -86,6 +86,8 @@ actively tracked trip; remove it explicitly from Pilot Tracker if needed.
 Exact duplicates stored under both an older `CAL-YYYY-MM-DD` identifier and a
 CrewHub pairing identifier are consolidated automatically. The pairing
 identifier and any completed or actively tracked leg state are retained.
+The dashboard Schedule Manager labels every entry as **Calendar** or **Pasted**;
+expanded calendar entries also show the originating calendar event summary.
 
 Flattened Google Calendar descriptions are supported. CrewHub gate-return
 records such as `882 PHX MST PHX MST` are retained as `GR` operational records
