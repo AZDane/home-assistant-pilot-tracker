@@ -16,6 +16,42 @@ class ScheduleLimitError(ValueError):
     """The imported schedule collection exceeds the supported horizon."""
 
 
+def trips_equivalent(first: Trip, second: Trip) -> bool:
+    """Return whether two differently named schedules contain the same legs."""
+    if len(first.legs) != len(second.legs):
+        return False
+    return all(
+        left.identity == right.identity
+        and left.scheduled_departure == right.scheduled_departure
+        and left.scheduled_arrival == right.scheduled_arrival
+        for left, right in zip(first.legs, second.legs, strict=True)
+    )
+
+
+def duplicate_preference(trip: Trip) -> tuple[int, int, int]:
+    """Rank exact duplicates, favoring operational state and real pairing IDs."""
+    active = any(leg.status == LegStatus.ACTIVE for leg in trip.legs)
+    progressed = sum(leg.status in (LegStatus.COMPLETED, LegStatus.ACTIVE) for leg in trip.legs)
+    real_pairing_id = not trip.trip_id.startswith("CAL-")
+    # Exact leg equivalence makes it safe to copy progress onto the canonical
+    # pairing ID, even when the legacy CAL copy owns the active pointer.
+    return int(real_pairing_id), int(active), progressed
+
+
+def preserve_duplicate_progress(kept: Trip, removed: Trip) -> Trip:
+    """Copy completed/active state from an equivalent schedule before removal."""
+    removed_by_identity = {leg.identity: leg for leg in removed.legs}
+    active_identity = removed.current_leg.identity if removed.current_leg else None
+    for leg in kept.legs:
+        old = removed_by_identity.get(leg.identity)
+        if old and old.status in (LegStatus.COMPLETED, LegStatus.ACTIVE):
+            leg.status = old.status
+            leg.tracking_identifiers = dict(old.tracking_identifiers)
+        if active_identity == leg.identity and leg.status == LegStatus.ACTIVE:
+            kept.current_leg_sequence = leg.sequence
+    return kept
+
+
 def validate_collection_horizon(trips: list[Trip], imported: Trip) -> None:
     all_trips = [trip for trip in trips if trip.key != imported.key] + [imported]
     dates = [leg.scheduled_departure for trip in all_trips for leg in trip.legs]

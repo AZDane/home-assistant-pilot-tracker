@@ -17,7 +17,8 @@ from .flight_validation import validate_candidate
 from .arrival import arrival_signals, event_matches_flight
 from .providers.southwest import SouthwestPairingProvider
 from .schedule import (
-    merge_trip, overlapping_trip_keys, select_pending_leg, trips_overlap,
+    duplicate_preference, merge_trip, overlapping_trip_keys, preserve_duplicate_progress,
+    select_pending_leg, trips_equivalent, trips_overlap,
     validate_collection_horizon, validate_leg_order,
 )
 from .state_machine import PilotTrackerState
@@ -53,6 +54,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
 
     async def async_restore(self) -> None:
         self.trip = await self.store.async_load()
+        self.trip = await self._async_reconcile_duplicate_schedules(self.trip)
         if self.trip and self.trip.current_leg and self.trip.current_leg.status != LegStatus.ACTIVE:
             _LOGGER.warning(
                 "Clearing stale current-leg pointer %s during startup recovery",
@@ -335,6 +337,21 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
     async def async_import_trip(self, imported: Trip) -> Trip:
         """Validate and merge a trip from any supported schedule source."""
         validate_leg_order(imported)
+        duplicates = [
+            trip for trip in self.store.trips
+            if trip.key != imported.key and trips_equivalent(trip, imported)
+        ]
+        if duplicates:
+            candidates = [imported, *duplicates]
+            kept = max(candidates, key=duplicate_preference)
+            for duplicate in candidates:
+                if duplicate is kept:
+                    continue
+                preserve_duplicate_progress(kept, duplicate)
+                if self.store.get(duplicate.key):
+                    await self.store.async_remove(duplicate.key)
+            kept.metadata.update(imported.metadata)
+            imported = kept
         existing = self.store.get(imported.key)
         merged = merge_trip(existing, imported)
         validate_collection_horizon(self.store.trips, merged)
@@ -349,6 +366,32 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.async_set_updated_data(None)
         await self.async_evaluate_tracking()
         return merged
+
+    async def _async_reconcile_duplicate_schedules(self, preferred: Trip | None) -> Trip | None:
+        """Collapse legacy CAL and pairing-ID copies created by older versions."""
+        trips = list(self.store.trips)
+        removed_keys: set[str] = set()
+        for index, first in enumerate(trips):
+            if first.key in removed_keys:
+                continue
+            group = [first] + [
+                other for other in trips[index + 1:]
+                if other.key not in removed_keys and trips_equivalent(first, other)
+            ]
+            if len(group) == 1:
+                continue
+            kept = max(group, key=duplicate_preference)
+            for duplicate in group:
+                if duplicate is kept:
+                    continue
+                preserve_duplicate_progress(kept, duplicate)
+                removed_keys.add(duplicate.key)
+                await self.store.async_remove(duplicate.key)
+                _LOGGER.info("Removed duplicate schedule %s in favor of %s", duplicate.key, kept.key)
+            await self.store.async_save(kept)
+            if preferred and preferred.key in removed_keys:
+                preferred = kept
+        return preferred
 
     async def async_configure_calendar(self, entity_id: str | None) -> None:
         """Configure and immediately synchronize a Home Assistant calendar."""

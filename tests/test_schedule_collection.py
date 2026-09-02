@@ -2,11 +2,15 @@ from datetime import timedelta
 
 import pytest
 
+from custom_components.pilot_tracker.models import LegStatus
 from custom_components.pilot_tracker.providers.southwest import SouthwestPairingProvider
 from custom_components.pilot_tracker.schedule import (
+    duplicate_preference,
+    preserve_duplicate_progress,
     ScheduleConflictError,
     ScheduleLimitError,
     overlapping_trip_keys,
+    trips_equivalent,
     validate_collection_horizon,
     validate_leg_order,
 )
@@ -39,6 +43,32 @@ def test_overlapping_loaded_trips_are_both_identified():
     second = SouthwestPairingProvider().parse(SAMPLE.replace("PAGR", "NEXT"), year=2026)
 
     assert overlapping_trip_keys([first, second]) == sorted([first.key, second.key])
+
+
+def test_legacy_calendar_copy_is_recognized_as_exact_duplicate():
+    pairing = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    legacy = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    legacy.trip_id = "CAL-2026-08-07"
+
+    assert trips_equivalent(pairing, legacy)
+    assert duplicate_preference(pairing) > duplicate_preference(legacy)
+
+
+def test_duplicate_progress_is_preserved_on_pairing_identifier():
+    pairing = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    legacy = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    legacy.trip_id = "CAL-2026-08-07"
+    legacy.legs[0].status = LegStatus.COMPLETED
+    legacy.legs[1].status = LegStatus.ACTIVE
+    legacy.legs[1].tracking_identifiers = {"id": "tracked-aircraft"}
+    legacy.current_leg_sequence = 2
+
+    preserve_duplicate_progress(pairing, legacy)
+
+    assert pairing.legs[0].status == LegStatus.COMPLETED
+    assert pairing.legs[1].status == LegStatus.ACTIVE
+    assert pairing.legs[1].tracking_identifiers == {"id": "tracked-aircraft"}
+    assert pairing.current_leg_sequence == 2
 
 
 def test_nonoverlapping_loaded_trips_are_allowed():

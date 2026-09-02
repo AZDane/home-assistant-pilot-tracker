@@ -83,6 +83,9 @@ such as `Thu Sep 10`, and flight rows such as
 minutes and whenever the calendar entity updates. Revisions update the same
 pairing. Removing a calendar event does not automatically delete a stored or
 actively tracked trip; remove it explicitly from Pilot Tracker if needed.
+Exact duplicates stored under both an older `CAL-YYYY-MM-DD` identifier and a
+CrewHub pairing identifier are consolidated automatically. The pairing
+identifier and any completed or actively tracked leg state are retained.
 
 Flattened Google Calendar descriptions are supported. CrewHub gate-return
 records such as `882 PHX MST PHX MST` are retained as `GR` operational records
