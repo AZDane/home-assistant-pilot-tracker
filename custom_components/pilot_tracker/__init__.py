@@ -7,7 +7,7 @@ from homeassistant.core import CoreState, EVENT_HOMEASSISTANT_STARTED, HomeAssis
 from homeassistant.helpers import config_validation as cv
 
 from .airports import load_airports
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_CALENDAR_ENTITY, DOMAIN, PLATFORMS
 from .coordinator import PilotTrackerCoordinator
 from .frontend import FrontendRegistration
 from .storage import TripStore
@@ -72,6 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await coordinator.async_setup_tracking()
+    await coordinator.async_configure_calendar(entry.options.get(CONF_CALENDAR_ENTITY))
     return True
 
 

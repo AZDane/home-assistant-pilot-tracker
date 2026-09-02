@@ -3,6 +3,7 @@
 from typing import Final
 
 DOMAIN: Final = "pilot_tracker"
+CONF_CALENDAR_ENTITY: Final = "calendar_entity"
 PLATFORMS: Final = ["device_tracker", "sensor"]
 STORAGE_KEY: Final = f"{DOMAIN}.trips"
 STORAGE_VERSION: Final = 1

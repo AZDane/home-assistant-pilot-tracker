@@ -11,6 +11,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .models import FlightLeg, LegStatus, Trip, TripStatus
+from .calendar_sync import CalendarScheduleSync
 from .flight_validation import validate_candidate
 from .arrival import arrival_signals, event_matches_flight
 from .providers.southwest import SouthwestPairingProvider
@@ -45,6 +46,9 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self._accepted_updated_at = 0.0
         self._last_tracking_request_at = 0.0
         self.schedule_conflicts: list[str] = []
+        self.calendar_sync = CalendarScheduleSync(
+            hass, self.async_import_trip, lambda trip_key: self.store.get(trip_key) is not None
+        )
 
     async def async_restore(self) -> None:
         self.trip = await self.store.async_load()
@@ -81,6 +85,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.hass.async_create_task(self.async_evaluate_tracking())
 
     async def async_shutdown(self) -> None:
+        self.calendar_sync.async_shutdown()
         if self._unsub_interval:
             self._unsub_interval()
             self._unsub_interval = None
@@ -313,6 +318,10 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
 
     async def async_import_schedule(self, text: str) -> Trip:
         imported = SouthwestPairingProvider().parse(text)
+        return await self.async_import_trip(imported)
+
+    async def async_import_trip(self, imported: Trip) -> Trip:
+        """Validate and merge a trip from any supported schedule source."""
         validate_leg_order(imported)
         existing = self.store.get(imported.key)
         merged = merge_trip(existing, imported)
@@ -328,6 +337,16 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.async_set_updated_data(None)
         await self.async_evaluate_tracking()
         return merged
+
+    async def async_configure_calendar(self, entity_id: str | None) -> None:
+        """Configure and immediately synchronize a Home Assistant calendar."""
+        await self.calendar_sync.async_configure(entity_id)
+        self.async_set_updated_data(None)
+
+    async def async_sync_calendar(self) -> None:
+        """Manually request a calendar synchronization."""
+        await self.calendar_sync.async_sync()
+        self.async_set_updated_data(None)
 
     async def async_clear_schedule(self) -> None:
         if self.trip:

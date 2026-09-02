@@ -7,6 +7,8 @@
         "title": "Manage schedule",
         "menu_options": {
           "import_schedule": "Import or replace schedule",
+          "configure_calendar": "Configure calendar import",
+          "sync_calendar": "Synchronize calendar now",
           "view_schedule": "View current schedule",
           "reset_aircraft": "Resolve an aircraft change",
           "complete_current_leg": "Manually complete current leg",
@@ -17,6 +19,16 @@
         "title": "Import or replace schedule",
         "description": "Paste Southwest pairing-detail text (Herb, Local, or Domicile Time) or compact local-time roster rows.",
         "data": {"schedule_text": "Schedule text"}
+      },
+      "configure_calendar": {
+        "title": "Configure calendar import",
+        "description": "Select the Home Assistant calendar containing CrewHub pairing events. Pilot Tracker reads it locally through Home Assistant; it does not receive Google credentials.",
+        "data": {"calendar_entity": "Flight calendar"}
+      },
+      "sync_calendar": {
+        "title": "Synchronize calendar",
+        "description": "{calendar_status}",
+        "data": {"sync_now": "Synchronize now"}
       },
       "view_schedule": {
         "title": "View schedules",

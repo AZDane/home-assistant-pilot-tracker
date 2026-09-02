@@ -93,7 +93,11 @@ def merge_trip(existing: Trip | None, imported: Trip) -> Trip:
     for leg in imported.legs:
         old = old_by_identity.get(leg.identity)
         if old and old.status in (LegStatus.COMPLETED, LegStatus.ACTIVE):
-            leg = replace(leg, status=old.status)
+            leg = replace(
+                leg,
+                status=old.status,
+                tracking_identifiers=dict(old.tracking_identifiers),
+            )
         merged_legs.append(leg)
 
     completed_missing = [

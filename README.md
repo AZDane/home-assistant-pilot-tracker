@@ -69,6 +69,20 @@ A compact single pairing is identified by its first date. A multi-pairing
 monthly roster is identified by its dominant month, including a carry-in leg
 from the preceding month.
 
+### Google Calendar / CrewHub synchronization
+
+If Google Calendar is already configured in Home Assistant, open **Pilot
+Tracker → Configure → Configure calendar import** and select the `calendar.*`
+entity containing CrewHub pairing events. Pilot Tracker uses Home Assistant's
+calendar API and never handles Google credentials directly.
+
+Recognized CrewHub descriptions begin with `LOCAL`, contain dated duty headings
+such as `Thu Sep 10`, and flight rows such as
+`2327 PHX 16:05 MST LAX 17:30 PDT`. Pilot Tracker synchronizes every five
+minutes and whenever the calendar entity updates. Revisions update the same
+pairing. Removing a calendar event does not automatically delete a stored or
+actively tracked trip; remove it explicitly from Pilot Tracker if needed.
+
 The integration stores imported schedules in Home Assistant's local storage.
 It does not send pairing text or crew information to an external service. Only
 the scheduled flight identifier is passed to the already configured

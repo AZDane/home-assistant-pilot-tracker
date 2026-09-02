@@ -69,3 +69,21 @@ def test_pending_leg_is_not_retained_after_scheduled_arrival():
     now = trip.legs[0].scheduled_arrival + timedelta(minutes=1)
 
     assert select_pending_leg(trip, now) == trip.legs[1]
+
+
+def test_revision_preserves_active_aircraft_identifiers():
+    existing = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    existing.current_leg_sequence = 1
+    existing.legs[0].status = LegStatus.ACTIVE
+    existing.legs[0].tracking_identifiers = {
+        "aircraft_registration": "N123WN",
+        "id": "flight-id",
+    }
+    revised = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+
+    merged = merge_trip(existing, revised)
+
+    assert merged.legs[0].tracking_identifiers == {
+        "aircraft_registration": "N123WN",
+        "id": "flight-id",
+    }

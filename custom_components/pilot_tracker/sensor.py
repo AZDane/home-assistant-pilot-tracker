@@ -64,6 +64,13 @@ class TrackingSourceSensor(BaseSensor):
             "last_candidate_rejection": self.coordinator.last_rejection,
             "last_candidate_rejection_detail": self.coordinator.last_rejection_detail,
             "position_fresh": self.coordinator.tracking_position_fresh,
+            "calendar_entity_id": self.coordinator.calendar_sync.entity_id,
+            "calendar_last_sync": (
+                self.coordinator.calendar_sync.last_sync.isoformat()
+                if self.coordinator.calendar_sync.last_sync else None
+            ),
+            "calendar_last_error": self.coordinator.calendar_sync.last_error,
+            "calendar_imported_events": self.coordinator.calendar_sync.imported_events,
         }
 
 
