@@ -55,6 +55,13 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
     async def async_restore(self) -> None:
         self.trip = await self.store.async_load()
         self.trip = await self._async_reconcile_duplicate_schedules(self.trip)
+        # v1.6.2 could retain the pasted provider name while copying calendar
+        # metadata during duplicate cleanup. Repair those stored schedules so
+        # the calendar remains their authoritative source.
+        for trip in self.store.trips:
+            if trip.metadata.get("calendar_entity_id") and trip.source != "crewhub_calendar":
+                trip.source = "crewhub_calendar"
+                await self.store.async_save(trip)
         if self.trip and self.trip.current_leg and self.trip.current_leg.status != LegStatus.ACTIVE:
             _LOGGER.warning(
                 "Clearing stale current-leg pointer %s during startup recovery",
@@ -351,6 +358,10 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
                 if self.store.get(duplicate.key):
                     await self.store.async_remove(duplicate.key)
             kept.metadata.update(imported.metadata)
+            if imported.source == "crewhub_calendar":
+                kept.source = imported.source
+                kept.time_basis = imported.time_basis
+                kept.revision_date = imported.revision_date
             imported = kept
         existing = self.store.get(imported.key)
         merged = merge_trip(existing, imported)

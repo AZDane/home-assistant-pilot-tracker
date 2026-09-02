@@ -88,6 +88,8 @@ CrewHub pairing identifier are consolidated automatically. The pairing
 identifier and any completed or actively tracked leg state are retained.
 The dashboard Schedule Manager labels every entry as **Calendar** or **Pasted**;
 expanded calendar entries also show the originating calendar event summary.
+When a calendar event matches a pasted pairing, the calendar version becomes
+authoritative and future event revisions update that schedule in place.
 
 Flattened Google Calendar descriptions are supported. CrewHub gate-return
 records such as `882 PHX MST PHX MST` are retained as `GR` operational records

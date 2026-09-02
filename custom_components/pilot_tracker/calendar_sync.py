@@ -108,7 +108,11 @@ class CalendarScheduleSync:
                     existing = self._get_trip(trip.key)
                     if trip.legs[-1].scheduled_arrival < now and existing is None:
                         continue
-                    if existing and existing.metadata.get("calendar_fingerprint") == fingerprint:
+                    if (
+                        existing
+                        and existing.source == "crewhub_calendar"
+                        and existing.metadata.get("calendar_fingerprint") == fingerprint
+                    ):
                         continue
                     await self._import_trip(trip)
                 except (ScheduleParseError, ValueError) as error:
