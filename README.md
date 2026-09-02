@@ -83,6 +83,11 @@ minutes and whenever the calendar entity updates. Revisions update the same
 pairing. Removing a calendar event does not automatically delete a stored or
 actively tracked trip; remove it explicitly from Pilot Tracker if needed.
 
+Flattened Google Calendar descriptions are supported. CrewHub gate-return
+records such as `882 PHX MST PHX MST` are retained as `GR` operational records
+when their interval can be inferred from surrounding flights, but are excluded
+from FlightRadar24 tracking; Pilot Tracker proceeds to the next airborne leg.
+
 The integration stores imported schedules in Home Assistant's local storage.
 It does not send pairing text or crew information to an external service. Only
 the scheduled flight identifier is passed to the already configured

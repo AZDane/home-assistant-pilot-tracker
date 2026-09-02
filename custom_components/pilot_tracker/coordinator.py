@@ -279,7 +279,10 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             await self.tracking.async_stop(identifier)
         self.accepted_flight = None
         self.flight_path = []
-        next_leg = next((item for item in self.trip.legs if item.sequence > leg.sequence), None)
+        next_leg = next((
+            item for item in self.trip.legs
+            if item.sequence > leg.sequence and item.status == LegStatus.PENDING
+        ), None)
         if next_leg is None:
             self.trip.current_leg_sequence = None
             self.trip.status = TripStatus.COMPLETE

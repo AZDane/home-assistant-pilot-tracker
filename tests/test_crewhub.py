@@ -94,3 +94,45 @@ def test_html_breaks_and_entities_are_normalized():
         text, anchor_date=date(2026, 9, 10)
     )
     assert len(trip.legs) == 1
+
+
+def test_flattened_calendar_text_and_gate_return_are_supported():
+    text = """12:55 MST GEG DEN PHX 23:50 MST July 24 – 26, 2026
+    Take meeting notes Start a new document to capture notes Trip: PP2O
+    LOCAL Fri Jul 24 Report 12:55 MST
+    670 PHX 13:55 MST ONT 15:05 PDT
+    670 ONT 15:40 PDT SMF 17:05 PDT
+    670 SMF 17:40 PDT DEN 21:00 MDT
+    1538 DEN 22:05 MDT GEG 23:30 PDT
+    DUTY GEG 00:15 PDT GEG 00:15 PDT Duty 11:20 Block 6:32
+    Sat Jul 25 Report 11:40 PDT
+    882 GEG 12:10 PDT PHX 14:45 MST
+    882 PHX MST PHX MST
+    882 PHX 15:25 MST ABQ 17:35 MDT
+    882 ABQ 18:10 MDT DEN 19:40 MDT Duty 9:59 Block 5:29 Credit 8.90 G
+    Sun Jul 26 Report 18:15 MDT
+    136 DEN 18:45 MDT SMF 20:15 PDT
+    3817 SMF 20:55 PDT PHX 22:55 MST
+    Synced from CrewHub BYO Version 8.4.0 August 13 11:15 MST"""
+    zones = {
+        **ZONES,
+        "ONT": "America/Los_Angeles",
+        "SMF": "America/Los_Angeles",
+        "GEG": "America/Los_Angeles",
+        "ABQ": "America/Denver",
+    }
+
+    trip = CrewHubCalendarProvider(zones.__getitem__).parse(
+        text, anchor_date=date(2026, 7, 24)
+    )
+
+    assert trip.trip_id == "PP2O"
+    assert len(trip.legs) == 10
+    gate_return = next(leg for leg in trip.legs if leg.qualifier == "GR")
+    assert gate_return.origin == gate_return.destination == "PHX"
+    assert gate_return.status.value == "skipped"
+    assert gate_return.scheduled_departure.isoformat() == "2026-07-25T14:45:00-07:00"
+    assert gate_return.scheduled_arrival.isoformat() == "2026-07-25T15:25:00-07:00"
+    assert trip.metadata["gate_return_count"] == 1
+    following = trip.legs[gate_return.sequence]
+    assert (following.origin, following.destination) == ("PHX", "ABQ")

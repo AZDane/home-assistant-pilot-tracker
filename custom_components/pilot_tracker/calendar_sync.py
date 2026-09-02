@@ -91,8 +91,15 @@ class CalendarScheduleSync:
                     trip = CrewHubCalendarProvider().parse(
                         description, anchor_date=anchor
                     )
-                    trip.trip_id = f"CAL-{trip.legs[0].date}"
-                    fingerprint = hashlib.sha256(html_text(description).encode()).hexdigest()
+                    legacy_id = f"CAL-{trip.legs[0].date}"
+                    legacy_key = f"{legacy_id}:{trip.legs[0].date}"
+                    if self._get_trip(legacy_key) or trip.trip_id == trip.legs[0].date:
+                        # Preserve the key created by v1.5.0 so upgrading does
+                        # not duplicate an already synchronized pairing.
+                        trip.trip_id = legacy_id
+                    fingerprint = hashlib.sha256(
+                        b"crewhub-v2\0" + html_text(description).encode()
+                    ).hexdigest()
                     trip.metadata.update({
                         "calendar_entity_id": self.entity_id,
                         "calendar_summary": event.get("summary") or "",
@@ -122,8 +129,8 @@ class CalendarScheduleSync:
     @staticmethod
     def _looks_like_crewhub(description: str) -> bool:
         return bool(
-            re.search(r"(?mi)^\s*LOCAL\s*$", html_text(description))
-            and re.search(r"(?mi)^\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s*$", html_text(description))
+            re.search(r"(?i)\bLOCAL\b", html_text(description))
+            and re.search(r"(?i)\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\b", html_text(description))
         )
 
     @staticmethod
