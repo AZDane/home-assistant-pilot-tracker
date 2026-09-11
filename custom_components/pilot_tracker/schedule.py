@@ -17,23 +17,26 @@ class ScheduleLimitError(ValueError):
 
 
 def trips_equivalent(first: Trip, second: Trip) -> bool:
-    """Return whether two differently named schedules contain the same legs."""
+    """Return whether two schedules describe the same operated legs.
+
+    Calendar revisions commonly adjust departure or arrival times. Those
+    timestamps must not make the previous CAL-keyed copy look like a separate
+    overlapping trip when the service date, flight, and airports are unchanged.
+    """
     if len(first.legs) != len(second.legs):
         return False
     return all(
         left.identity == right.identity
-        and left.scheduled_departure == right.scheduled_departure
-        and left.scheduled_arrival == right.scheduled_arrival
         for left, right in zip(first.legs, second.legs, strict=True)
     )
 
 
 def duplicate_preference(trip: Trip) -> tuple[int, int, int]:
-    """Rank exact duplicates, favoring operational state and real pairing IDs."""
+    """Rank duplicate revisions, favoring operational state and real pairing IDs."""
     active = any(leg.status == LegStatus.ACTIVE for leg in trip.legs)
     progressed = sum(leg.status in (LegStatus.COMPLETED, LegStatus.ACTIVE) for leg in trip.legs)
     real_pairing_id = not trip.trip_id.startswith("CAL-")
-    # Exact leg equivalence makes it safe to copy progress onto the canonical
+    # Matching leg identities make it safe to copy progress onto the canonical
     # pairing ID, even when the legacy CAL copy owns the active pointer.
     return int(real_pairing_id), int(active), progressed
 

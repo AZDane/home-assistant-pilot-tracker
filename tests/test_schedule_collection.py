@@ -54,6 +54,16 @@ def test_legacy_calendar_copy_is_recognized_as_exact_duplicate():
     assert duplicate_preference(pairing) > duplicate_preference(legacy)
 
 
+def test_legacy_calendar_copy_with_revised_times_is_recognized_as_duplicate():
+    pairing = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    legacy = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    legacy.trip_id = "CAL-2026-08-07"
+    legacy.legs[0].scheduled_departure -= timedelta(minutes=15)
+    legacy.legs[-1].scheduled_arrival += timedelta(minutes=20)
+
+    assert trips_equivalent(pairing, legacy)
+
+
 def test_duplicate_progress_is_preserved_on_pairing_identifier():
     pairing = SouthwestPairingProvider().parse(SAMPLE, year=2026)
     legacy = SouthwestPairingProvider().parse(SAMPLE, year=2026)
