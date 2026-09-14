@@ -18,7 +18,7 @@ from .arrival import arrival_signals, event_matches_flight
 from .providers.southwest import SouthwestPairingProvider
 from .schedule import (
     duplicate_preference, merge_trip, overlapping_trip_keys, preserve_duplicate_progress,
-    select_pending_leg, trips_equivalent, trips_overlap,
+    select_next_leg, select_pending_leg, trips_equivalent, trips_overlap,
     validate_collection_horizon, validate_leg_order,
 )
 from .state_machine import PilotTrackerState
@@ -543,23 +543,5 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
     def next_leg(self) -> FlightLeg | None:
         if not self.trip:
             return None
-        pointed = self.trip.current_leg
-        # Completion advances the pointer to the following pending leg. That
-        # leg is the next flight; searching only after the pointer skips it.
-        if pointed and pointed.status == LegStatus.PENDING:
-            return pointed
-        current = self.trip.current_leg_sequence or 0
-        candidates = [
-            leg for leg in self.trip.legs
-            if leg.sequence > current and leg.status == LegStatus.PENDING
-        ]
-        if current:
-            return candidates[0] if candidates else None
         now = datetime.now(tz=self.trip.legs[0].scheduled_departure.tzinfo)
-        for leg in candidates:
-            duty_end = max(
-                item.scheduled_arrival for item in self.trip.legs if item.duty_period == leg.duty_period
-            )
-            if self._is_duty_start(leg) and now <= duty_end + timedelta(hours=4):
-                return leg
-        return None
+        return select_next_leg(self.trip, now)

@@ -109,6 +109,26 @@ def select_pending_leg(trip: Trip, now: datetime) -> FlightLeg | None:
     return min(future, key=lambda leg: leg.scheduled_departure) if future else None
 
 
+def select_next_leg(trip: Trip, now: datetime) -> FlightLeg | None:
+    """Select the next leg for display without resurrecting an ended duty."""
+    pointed = trip.current_leg
+    # Completion advances the pointer to the following pending leg. That leg
+    # is the next flight; searching only after the pointer would skip it.
+    if pointed and pointed.status == LegStatus.PENDING:
+        return pointed
+    current = trip.current_leg_sequence or 0
+    candidates = [
+        leg for leg in trip.legs
+        if leg.sequence > current and leg.status == LegStatus.PENDING
+    ]
+    if current:
+        return candidates[0] if candidates else None
+    # With no active pointer, derive the display from the clock rather than
+    # retaining a duty's first leg during the post-duty trip-selection grace
+    # period. Otherwise the first leg can reappear after the final arrival.
+    return select_pending_leg(trip, now)
+
+
 def merge_trip(existing: Trip | None, imported: Trip) -> Trip:
     """Merge an imported revision while preserving operational progress."""
     if existing is None or existing.status in (TripStatus.COMPLETE, TripStatus.ARCHIVED):

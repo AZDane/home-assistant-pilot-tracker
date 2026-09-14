@@ -1,10 +1,16 @@
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 
 from custom_components.pilot_tracker.models import LegStatus
 from custom_components.pilot_tracker.providers.southwest import SouthwestPairingProvider
-from custom_components.pilot_tracker.schedule import ScheduleConflictError, merge_trip, select_pending_leg
+from custom_components.pilot_tracker.schedule import (
+    ScheduleConflictError,
+    merge_trip,
+    select_next_leg,
+    select_pending_leg,
+)
 from tests.test_southwest import SAMPLE
 
 
@@ -69,6 +75,13 @@ def test_pending_leg_is_not_retained_after_scheduled_arrival():
     now = trip.legs[0].scheduled_arrival + timedelta(minutes=1)
 
     assert select_pending_leg(trip, now) == trip.legs[1]
+
+
+def test_no_pending_leg_is_selected_after_final_scheduled_arrival():
+    trip = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    now = trip.legs[-1].scheduled_arrival + timedelta(minutes=1)
+
+    assert select_next_leg(trip, now) is None
 
 
 def test_revision_preserves_active_aircraft_identifiers():
