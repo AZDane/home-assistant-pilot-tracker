@@ -17,12 +17,14 @@ from custom_components.pilot_tracker.schedule import (
 from tests.test_southwest import SAMPLE
 
 
-def test_two_month_collection_is_allowed():
+def test_collection_at_62_day_boundary_is_allowed():
     first = SouthwestPairingProvider().parse(SAMPLE, year=2026)
     second = SouthwestPairingProvider().parse(SAMPLE.replace("PAGR", "NEXT"), year=2026)
+    departures = [leg.scheduled_departure for leg in first.legs]
+    offset = timedelta(days=62) - (max(departures) - min(departures))
     for leg in second.legs:
-        leg.scheduled_departure += timedelta(days=60)
-        leg.scheduled_arrival += timedelta(days=60)
+        leg.scheduled_departure += offset
+        leg.scheduled_arrival += offset
         leg.date = leg.scheduled_departure.date().isoformat()
     validate_collection_horizon([first], second)
 

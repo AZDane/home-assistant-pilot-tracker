@@ -1,3 +1,5 @@
+import pytest
+
 from custom_components.pilot_tracker.flight_validation import validate_candidate
 from custom_components.pilot_tracker.providers.southwest import SouthwestPairingProvider
 from tests.test_southwest import SAMPLE
@@ -28,6 +30,34 @@ def test_accepts_southwest_icao_when_iata_is_missing():
     flight = candidate(leg)
     flight["airline_iata"] = None
     flight["airline_icao"] = "SWA"
+
+    assert validate_candidate(leg, flight).accepted
+
+
+@pytest.mark.parametrize("airline", [
+    {"airline_iata": "AA"},
+    {"airline_iata": None, "airline_icao": "AAL"},
+    {"airline_icao": "AAL"},
+    {"airline_name": "American Airlines"},
+])
+def test_explicit_airline_conflicts_override_southwest_identifiers(airline):
+    leg = SouthwestPairingProvider().parse(SAMPLE, year=2026).legs[0]
+    flight = candidate(leg)
+    flight.update(airline, callsign="SWA3206")
+
+    assert validate_candidate(leg, flight).reason == "airline_mismatch"
+
+
+@pytest.mark.parametrize("airline", [
+    {},
+    {"airline_name": "Southwest Airlines"},
+    {"airline_iata": " wn "},
+])
+def test_accepts_airline_fallback_and_southwest_variants(airline):
+    leg = SouthwestPairingProvider().parse(SAMPLE, year=2026).legs[0]
+    flight = candidate(leg)
+    flight["airline_iata"] = None
+    flight.update(airline)
 
     assert validate_candidate(leg, flight).accepted
 

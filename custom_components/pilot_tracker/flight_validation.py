@@ -25,14 +25,22 @@ def normalize_flight_number(value: Any) -> str:
 
 def normalize_airline(flight: dict[str, Any]) -> str:
     """Normalize IATA/ICAO/name variants exposed by FlightRadar24."""
-    values = (
-        flight.get("airline_iata"), flight.get("airline_icao"),
-        flight.get("airline_name"), flight.get("flight_number"), flight.get("callsign"),
-    )
-    tokens = {str(value or "").upper().replace(" ", "") for value in values}
-    if any(token == "WN" or token == "SWA" or token.startswith(("WN", "SWA", "SOUTHWEST")) for token in tokens):
+    explicit = []
+    for field in ("airline_iata", "airline_icao", "airline_name"):
+        token = str(flight.get(field) or "").upper().replace(" ", "")
+        if not token:
+            continue
+        southwest = token in ("WN", "SWA") or (field == "airline_name" and token.startswith("SOUTHWEST"))
+        if not southwest:
+            return token
+        explicit.append(token)
+    if explicit:
         return "WN"
-    return str(flight.get("airline_iata") or flight.get("airline_icao") or "").upper()
+    # Infer the airline from flight identifiers only when airline data is absent.
+    tokens = [str(flight.get(field) or "").upper().replace(" ", "") for field in ("flight_number", "callsign")]
+    if any(token.startswith(("WN", "SWA")) for token in tokens):
+        return "WN"
+    return ""
 
 
 def route_code(flight: dict[str, Any], endpoint: str) -> str:
