@@ -96,6 +96,7 @@ class PilotTrackerLiveMap extends HTMLElement {
       this._L = L;
       this._map = L.map(this.querySelector(".pilot-map-canvas"), {zoomControl:true}).setView([39, -98], 4);
       this._tileLayer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        referrerPolicy:"origin",
         maxZoom:18,
         keepBuffer:4,
         updateWhenIdle:true,
