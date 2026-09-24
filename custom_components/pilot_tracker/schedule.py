@@ -62,6 +62,24 @@ def validate_collection_horizon(trips: list[Trip], imported: Trip) -> None:
         raise ScheduleLimitError("Loaded schedules span more than 62 days")
 
 
+def stale_calendar_trip_keys(
+    trips: list[Trip],
+    entity_id: str,
+    seen_trip_keys: set[str],
+    window_start: datetime,
+    window_end: datetime,
+) -> list[str]:
+    """Return calendar-owned trips absent from an authoritative calendar window."""
+    return [
+        trip.key
+        for trip in trips
+        if trip.source == "crewhub_calendar"
+        and trip.metadata.get("calendar_entity_id") == entity_id
+        and trip.key not in seen_trip_keys
+        and window_start <= trip.legs[0].scheduled_departure < window_end
+    ]
+
+
 def validate_leg_order(trip: Trip) -> None:
     """Reject a malformed pairing containing simultaneously scheduled legs."""
     ordered = sorted(trip.legs, key=lambda leg: leg.scheduled_departure)

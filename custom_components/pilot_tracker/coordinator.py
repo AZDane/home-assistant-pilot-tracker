@@ -18,7 +18,8 @@ from .arrival import arrival_signals, event_matches_flight
 from .providers.southwest import SouthwestPairingProvider
 from .schedule import (
     duplicate_preference, merge_trip, overlapping_trip_keys, preserve_duplicate_progress,
-    select_next_leg, select_pending_leg, trips_equivalent, trips_overlap,
+    select_next_leg, select_pending_leg, stale_calendar_trip_keys, trips_equivalent,
+    trips_overlap,
     validate_collection_horizon, validate_leg_order,
 )
 from .state_machine import PilotTrackerState
@@ -49,7 +50,10 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self._last_tracking_request_at = 0.0
         self.schedule_conflicts: list[str] = []
         self.calendar_sync = CalendarScheduleSync(
-            hass, self.async_import_trip, lambda trip_key: self.store.get(trip_key) is not None
+            hass,
+            self.async_import_trip,
+            self.store.get,
+            self.async_reconcile_calendar_trips,
         )
 
     async def async_restore(self) -> None:
@@ -413,6 +417,56 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         """Manually request a calendar synchronization."""
         await self.calendar_sync.async_sync()
         self.async_set_updated_data(None)
+
+    async def async_reconcile_calendar_trips(
+        self,
+        entity_id: str,
+        seen_trip_keys: set[str],
+        window_start: datetime,
+        window_end: datetime,
+    ) -> int:
+        """Remove calendar trips no longer present in a successful calendar response."""
+        stale_keys = stale_calendar_trip_keys(
+            self.store.trips,
+            entity_id,
+            seen_trip_keys,
+            window_start,
+            window_end,
+        )
+        removed = 0
+        for trip_key in stale_keys:
+            trip = self.store.get(trip_key)
+            if (
+                trip is not None
+                and trip is self.trip
+                and trip.current_leg is not None
+                and trip.current_leg.status == LegStatus.ACTIVE
+            ):
+                _LOGGER.warning(
+                    "Calendar trip %s disappeared but is being tracked; preserving it until tracking completes",
+                    trip_key,
+                )
+                continue
+            await self.store.async_remove(trip_key)
+            removed += 1
+            _LOGGER.info("Removed calendar trip %s because it is no longer on %s", trip_key, entity_id)
+
+        if removed:
+            preferred = self.trip if self.trip and self.store.get(self.trip.key) else None
+            self.trip = self._choose_operational_trip(preferred)
+            if self.schedule_conflicts:
+                self.last_rejection = "overlapping_schedule_conflict"
+                self.state = PilotTrackerState.ERROR
+            else:
+                if self.last_rejection == "overlapping_schedule_conflict":
+                    self.last_rejection = None
+                self.state = (
+                    PilotTrackerState.WAITING_FOR_DUTY
+                    if self.trip
+                    else PilotTrackerState.NO_SCHEDULE
+                )
+            self.async_set_updated_data(None)
+        return removed
 
     async def async_clear_schedule(self) -> None:
         if self.trip:

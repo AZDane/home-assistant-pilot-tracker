@@ -30,10 +30,14 @@ class CalendarScheduleSync:
         hass: HomeAssistant,
         import_trip: Callable[[Any], Awaitable[Any]],
         get_trip: Callable[[str], Any | None],
+        reconcile_trips: Callable[
+            [str, set[str], datetime, datetime], Awaitable[int]
+        ],
     ) -> None:
         self.hass = hass
         self._import_trip = import_trip
         self._get_trip = get_trip
+        self._reconcile_trips = reconcile_trips
         self.entity_id: str | None = None
         self.last_sync: datetime | None = None
         self.last_error: str | None = None
@@ -78,9 +82,17 @@ class CalendarScheduleSync:
                 blocking=True,
                 return_response=True,
             )
-            events = ((response or {}).get(self.entity_id) or {}).get("events", [])
+            calendar_response = (response or {}).get(self.entity_id)
+            if not isinstance(calendar_response, dict) or not isinstance(
+                calendar_response.get("events"), list
+            ):
+                raise ValueError(
+                    f"Calendar response for {self.entity_id} did not contain an event list"
+                )
+            events = calendar_response["events"]
             recognized = 0
             had_error = False
+            seen_trip_keys: set[str] = set()
             for event in events:
                 description = event.get("description") or ""
                 if not self._looks_like_crewhub(description):
@@ -113,13 +125,26 @@ class CalendarScheduleSync:
                         and existing.source == "crewhub_calendar"
                         and existing.metadata.get("calendar_fingerprint") == fingerprint
                     ):
+                        seen_trip_keys.add(existing.key)
                         continue
-                    await self._import_trip(trip)
+                    imported = await self._import_trip(trip)
+                    seen_trip_keys.add(imported.key)
                 except (ScheduleParseError, ValueError) as error:
                     _LOGGER.warning("Could not import CrewHub calendar event on %s: %s", anchor, error)
                     self.last_error = str(error)
                     had_error = True
                     continue
+            # A complete calendar response is authoritative for this window.
+            # Reconcile only after every recognized event parsed successfully;
+            # a malformed event must never cause its previously stored trip to
+            # be mistaken for a deletion.
+            if not had_error:
+                await self._reconcile_trips(
+                    self.entity_id,
+                    seen_trip_keys,
+                    now - SYNC_PAST,
+                    now + SYNC_FUTURE,
+                )
             self.imported_events = recognized
             self.last_sync = now
             if not had_error:

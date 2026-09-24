@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -10,6 +11,7 @@ from custom_components.pilot_tracker.schedule import (
     ScheduleConflictError,
     ScheduleLimitError,
     overlapping_trip_keys,
+    stale_calendar_trip_keys,
     trips_equivalent,
     validate_collection_horizon,
     validate_leg_order,
@@ -100,3 +102,57 @@ def test_overlapping_legs_inside_one_trip_are_rejected():
 
     with pytest.raises(ScheduleConflictError, match="overlaps"):
         validate_leg_order(trip)
+
+
+def test_calendar_reconciliation_removes_only_missing_owned_trips_in_window():
+    zone = ZoneInfo("America/Phoenix")
+    seen = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    seen.source = "crewhub_calendar"
+    seen.metadata["calendar_entity_id"] = "calendar.crew"
+
+    stale = SouthwestPairingProvider().parse(SAMPLE.replace("PAGR", "STALE"), year=2026)
+    stale.source = "crewhub_calendar"
+    stale.metadata["calendar_entity_id"] = "calendar.crew"
+    for leg in stale.legs:
+        leg.scheduled_departure += timedelta(days=14)
+        leg.scheduled_arrival += timedelta(days=14)
+        leg.date = leg.scheduled_departure.date().isoformat()
+
+    manual = SouthwestPairingProvider().parse(SAMPLE.replace("PAGR", "MANUAL"), year=2026)
+    for leg in manual.legs:
+        leg.scheduled_departure += timedelta(days=21)
+        leg.scheduled_arrival += timedelta(days=21)
+        leg.date = leg.scheduled_departure.date().isoformat()
+
+    other_calendar = SouthwestPairingProvider().parse(SAMPLE.replace("PAGR", "OTHER"), year=2026)
+    other_calendar.source = "crewhub_calendar"
+    other_calendar.metadata["calendar_entity_id"] = "calendar.other"
+    for leg in other_calendar.legs:
+        leg.scheduled_departure += timedelta(days=28)
+        leg.scheduled_arrival += timedelta(days=28)
+        leg.date = leg.scheduled_departure.date().isoformat()
+
+    keys = stale_calendar_trip_keys(
+        [seen, stale, manual, other_calendar],
+        "calendar.crew",
+        {seen.key},
+        datetime(2026, 8, 1, tzinfo=zone),
+        datetime(2026, 10, 1, tzinfo=zone),
+    )
+
+    assert keys == [stale.key]
+
+
+def test_calendar_reconciliation_does_not_remove_trip_outside_query_window():
+    zone = ZoneInfo("America/Phoenix")
+    old = SouthwestPairingProvider().parse(SAMPLE, year=2026)
+    old.source = "crewhub_calendar"
+    old.metadata["calendar_entity_id"] = "calendar.crew"
+
+    assert stale_calendar_trip_keys(
+        [old],
+        "calendar.crew",
+        set(),
+        datetime(2026, 9, 1, tzinfo=zone),
+        datetime(2026, 11, 1, tzinfo=zone),
+    ) == []
