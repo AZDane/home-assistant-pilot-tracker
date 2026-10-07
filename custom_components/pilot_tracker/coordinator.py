@@ -11,10 +11,10 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .airports import airport_coordinates
-from .models import FlightLeg, LegStatus, Trip, TripStatus
+from .arrival import arrival_complete, arrival_signals, event_matches_flight
 from .calendar_sync import CalendarScheduleSync
 from .flight_validation import validate_candidate
-from .arrival import arrival_signals, event_matches_flight
+from .models import FlightLeg, LegStatus, Trip, TripStatus
 from .providers.southwest import SouthwestPairingProvider
 from .schedule import (
     duplicate_preference, merge_trip, overlapping_trip_keys, preserve_duplicate_progress,
@@ -260,14 +260,14 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             self.tracking.last_event, leg.tracking_identifiers, leg
         ) else None
         arrival_flight = self.accepted_flight or {}
-        if leg.qualifier == "DV":
+        destination_coordinates = airport_coordinates(leg.destination)
+        if leg.qualifier == "DV" and destination_coordinates:
             # FR24 may retain the originally filed destination after a divert.
             # The pairing's diversion airport is authoritative for arrival.
-            if coordinates := airport_coordinates(leg.destination):
-                arrival_flight = dict(arrival_flight)
-                arrival_flight["airport_destination_latitude"] = coordinates[0]
-                arrival_flight["airport_destination_longitude"] = coordinates[1]
-        signals = arrival_signals(arrival_flight, event)
+            arrival_flight = dict(arrival_flight)
+            arrival_flight["airport_destination_latitude"] = destination_coordinates[0]
+            arrival_flight["airport_destination_longitude"] = destination_coordinates[1]
+        signals = arrival_signals(arrival_flight, event, destination_coordinates)
         previous_evidence = set(self.trip.metadata.get("arrival_evidence", []))
         previous_samples = int(self.trip.metadata.get("ground_near_samples", 0))
         evidence = previous_evidence | signals
@@ -278,12 +278,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.trip.metadata["ground_near_samples"] = samples
         if evidence:
             self.state = PilotTrackerState.ARRIVAL_PENDING
-        complete = (
-            "gate_event" in evidence
-            or ("ground_near_destination" in evidence and ("landed_event" in evidence or samples >= 2))
-            or (now >= leg.scheduled_arrival + timedelta(hours=2)
-                and "ground_near_destination" in evidence)
-        )
+        complete = arrival_complete(evidence, samples, now, leg.scheduled_arrival)
         if complete:
             await self._complete_leg(leg)
         else:
