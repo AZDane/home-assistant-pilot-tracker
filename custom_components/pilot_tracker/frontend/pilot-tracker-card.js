@@ -12,6 +12,12 @@ function deviceTime(value) {
   });
 }
 
+function roundedMeasurement(value, unit) {
+  if (value == null || (typeof value === "string" && !value.trim())) return "";
+  const number = Number(value);
+  return Number.isFinite(number) ? `${Math.round(number)} ${unit}` : "";
+}
+
 function loadPilotLeaflet() {
   if (window.PilotTrackerLeaflet && window.PilotTrackerLeafletCss) {
     return Promise.resolve(window.PilotTrackerLeaflet);
@@ -154,7 +160,21 @@ class PilotTrackerLiveMap extends HTMLElement {
     if (!this._map) { this.renderShell(); this.initializeMap(); return; }
     const state = this._hass.states[this.config.entity];
     const flight = state?.attributes?.flights?.[0];
-    if (!flight || flight.latitude == null || flight.longitude == null) return;
+    if (!flight || flight.latitude == null || flight.longitude == null) {
+      if (this._marker) {
+        this._marker.remove();
+        this._marker = null;
+      }
+      this._track?.setLatLngs([]);
+      this._flightKey = null;
+      const info = this.querySelector(".pilot-live-info");
+      if (info) info.innerHTML = "";
+      const count = this.querySelector(".pilot-live-count");
+      if (count) count.textContent = "0 tracked";
+      return;
+    }
+    const count = this.querySelector(".pilot-live-count");
+    if (count) count.textContent = "1 tracked";
     const latitude = Number(flight.latitude);
     const longitude = Number(flight.longitude);
     const heading = Number(flight.heading ?? flight.track ?? 0);
@@ -173,8 +193,8 @@ class PilotTrackerLiveMap extends HTMLElement {
     const flightNumber = flight.flight_number || flight.callsign || key;
     const origin = flight.airport_origin_code_iata || flight.origin || "—";
     const destination = flight.airport_destination_code_iata || flight.destination || "—";
-    const speed = flight.ground_speed != null ? `${Math.round(Number(flight.ground_speed))} kts` : "";
-    const altitude = flight.altitude != null ? `${Math.round(Number(flight.altitude))} ft` : "";
+    const speed = roundedMeasurement(flight.ground_speed, "kts");
+    const altitude = roundedMeasurement(flight.altitude, "ft");
     const info = this.querySelector(".pilot-live-info");
     if (info) info.innerHTML = `<div class="pilot-live-flight">✈ ${escapeHtml(flightNumber)}</div><div class="pilot-live-route">${escapeHtml(origin)} → ${escapeHtml(destination)}</div><div class="pilot-live-stats">${escapeHtml([speed, altitude].filter(Boolean).join(" · "))}</div>`;
   }

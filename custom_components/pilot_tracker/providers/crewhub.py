@@ -107,12 +107,19 @@ class CrewHubCalendarProvider:
                     arrival_zone = ZoneInfo(self._airport_timezone(destination))
                 except (KeyError, ValueError, ZoneInfoNotFoundError) as error:
                     raise ScheduleParseError(str(error)) from error
-                departure = self._at(service_date, values["departure"], departure_zone)
-                arrival = self._at(service_date, values["arrival"], arrival_zone)
+                departure = self._at(
+                    service_date, values["departure"], departure_zone,
+                    values["departure_zone"], origin,
+                )
+                arrival = self._at(
+                    service_date, values["arrival"], arrival_zone,
+                    values["arrival_zone"], destination,
+                )
                 if arrival <= departure:
-                    arrival += timedelta(days=1)
-                self._validate_abbreviation(departure, values["departure_zone"], origin)
-                self._validate_abbreviation(arrival, values["arrival_zone"], destination)
+                    arrival = self._at(
+                        service_date + timedelta(days=1), values["arrival"], arrival_zone,
+                        values["arrival_zone"], destination,
+                    )
                 is_report_delay = kind == "report_delay"
                 parsed.append(FlightLeg(
                     0, service_date.isoformat(), "RPRT" if is_report_delay else values["flight"],
@@ -153,8 +160,10 @@ class CrewHubCalendarProvider:
             if report_match and duty_legs:
                 report_airport = duty_legs[0].origin
                 report_zone = ZoneInfo(self._airport_timezone(report_airport))
-                report_time = self._at(service_date, report_match.group("time"), report_zone)
-                self._validate_abbreviation(report_time, report_match.group("zone"), report_airport)
+                report_time = self._at(
+                    service_date, report_match.group("time"), report_zone,
+                    report_match.group("zone"), report_airport,
+                )
                 reports_by_duty[duty_period] = report_time
             hotel_match = _LAYOVER_HOTEL.search(section)
             if hotel_match:
@@ -205,14 +214,52 @@ class CrewHubCalendarProvider:
         return min(candidates, key=lambda candidate: abs(candidate - anchor))
 
     @staticmethod
-    def _at(service_date: date, value: str, timezone: ZoneInfo) -> datetime:
+    def _at(
+        service_date: date,
+        value: str,
+        timezone: ZoneInfo,
+        shown: str,
+        airport: str,
+    ) -> datetime:
+        """Resolve a local wall time using the airport zone and event date.
+
+        CrewHub can retain the daylight abbreviation on an event that falls
+        after the seasonal clock change. The IANA airport zone is authoritative
+        for the offset. During the repeated fall-back hour, however, the shown
+        abbreviation identifies which occurrence CrewHub intended.
+        """
         hour, minute = (int(part) for part in value.split(":"))
-        return datetime(service_date.year, service_date.month, service_date.day, hour, minute, tzinfo=timezone)
+        candidates = [
+            datetime(
+                service_date.year, service_date.month, service_date.day,
+                hour, minute, tzinfo=timezone, fold=fold,
+            )
+            for fold in (0, 1)
+        ]
+        shown = shown.upper()
+        matching = [candidate for candidate in candidates if candidate.tzname() == shown]
+        if matching:
+            return matching[0]
+        if shown not in CrewHubCalendarProvider._zone_abbreviations(timezone, service_date.year):
+            actual = candidates[0].tzname()
+            raise ScheduleParseError(
+                f"Time zone {shown} does not match {airport} ({actual}) on {service_date}"
+            )
+        # Both folds have the same offset outside an ambiguous fall-back hour.
+        # Resolve from the event date even if CrewHub printed the other seasonal
+        # abbreviation (for example PDT for a post-transition November flight).
+        return candidates[0]
 
     @staticmethod
-    def _validate_abbreviation(value: datetime, shown: str, airport: str) -> None:
-        actual = value.tzname()
-        if actual and actual.upper() != shown.upper():
-            raise ScheduleParseError(
-                f"Time zone {shown.upper()} does not match {airport} ({actual}) on {value.date()}"
+    def _zone_abbreviations(timezone: ZoneInfo, year: int) -> set[str]:
+        """Return seasonal abbreviations used by a zone around an event year."""
+        return {
+            abbreviation
+            for sample_year in (year - 1, year, year + 1)
+            for month in range(1, 13)
+            if (
+                abbreviation := datetime(
+                    sample_year, month, 15, 12, tzinfo=timezone
+                ).tzname()
             )
+        }

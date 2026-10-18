@@ -322,8 +322,11 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
 
     @property
     def tracking_position_fresh(self) -> bool:
+        leg = self.current_leg
         return bool(
-            self.accepted_flight
+            leg
+            and leg.status == LegStatus.ACTIVE
+            and self.accepted_flight
             and monotonic() - self._accepted_updated_at <= TRACKING_STALE_SECONDS
         )
 

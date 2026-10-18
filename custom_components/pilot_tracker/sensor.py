@@ -203,12 +203,17 @@ class FlightMapSensor(BaseSensor):
 
     @property
     def native_value(self):
-        return 1 if self.coordinator.accepted_flight else 0
+        return 1 if self.coordinator.tracking_position_fresh else 0
 
     @property
     def extra_state_attributes(self):
         flight = self.coordinator.accepted_flight
-        if not flight or flight.get("latitude") is None or flight.get("longitude") is None:
+        if (
+            not self.coordinator.tracking_position_fresh
+            or not flight
+            or flight.get("latitude") is None
+            or flight.get("longitude") is None
+        ):
             return {"flights": [], "bounds": None}
         latitude = float(flight["latitude"])
         longitude = float(flight["longitude"])

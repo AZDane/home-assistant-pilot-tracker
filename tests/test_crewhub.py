@@ -88,6 +88,54 @@ Thu Sep 10
         )
 
 
+def test_resolves_stale_daylight_abbreviation_from_event_date():
+    text = """LOCAL
+Sun Nov 1
+Report 08:00 PDT
+2151 SNA 09:00 PDT PHX 10:20 MST
+"""
+    zones = {**ZONES, "SNA": "America/Los_Angeles"}
+
+    trip = CrewHubCalendarProvider(zones.__getitem__).parse(
+        text, anchor_date=date(2026, 11, 1)
+    )
+
+    assert trip.legs[0].scheduled_departure.isoformat() == "2026-11-01T09:00:00-08:00"
+    assert trip.legs[0].scheduled_departure.tzname() == "PST"
+
+
+@pytest.mark.parametrize(
+    ("shown", "expected_offset"),
+    [("PDT", "-07:00"), ("PST", "-08:00")],
+)
+def test_fall_back_abbreviation_selects_repeated_hour(shown, expected_offset):
+    text = f"""LOCAL
+Sun Nov 1
+2151 SNA 01:30 {shown} PHX 03:30 MST
+"""
+    zones = {**ZONES, "SNA": "America/Los_Angeles"}
+
+    trip = CrewHubCalendarProvider(zones.__getitem__).parse(
+        text, anchor_date=date(2026, 11, 1)
+    )
+
+    assert trip.legs[0].scheduled_departure.isoformat().endswith(expected_offset)
+
+
+def test_overnight_arrival_resolves_abbreviation_on_arrival_date():
+    text = """LOCAL
+Sat Oct 31
+2151 PHX 23:30 MST SNA 01:30 PST
+"""
+    zones = {**ZONES, "SNA": "America/Los_Angeles"}
+
+    trip = CrewHubCalendarProvider(zones.__getitem__).parse(
+        text, anchor_date=date(2026, 10, 31)
+    )
+
+    assert trip.legs[0].scheduled_arrival.isoformat() == "2026-11-01T01:30:00-08:00"
+
+
 def test_html_breaks_and_entities_are_normalized():
     text = "LOCAL<br>Thu Sep 10<br>2327 PHX 16:05 MST LAX 17:30 PDT<br>Credit 5.37 &#x20;"
     trip = CrewHubCalendarProvider(ZONES.__getitem__).parse(
