@@ -73,6 +73,11 @@ synchronizes every five minutes and whenever the calendar entity updates.
 Revisions update the matching pairing while preserving completed or active
 flight progress. Non-flight calendar events are ignored, and equivalent
 calendar and pasted schedules are consolidated automatically.
+Expired calendar-managed schedules are archived before newer events are
+validated, including schedules older than the calendar query window. Manual
+imports and any trip with active aircraft tracking are never removed by this
+automatic cleanup. Temporary calendar failures preserve all current and future
+schedules and retry on the normal five-minute interval.
 The dashboard Schedule Manager labels every entry as **Calendar** or **Pasted**;
 expanded calendar entries also show the originating calendar event summary.
 When a calendar event matches a pasted pairing, the calendar version becomes

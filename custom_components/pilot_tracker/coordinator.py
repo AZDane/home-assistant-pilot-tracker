@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta
 from time import monotonic
 
 from homeassistant.core import HomeAssistant, callback
@@ -17,10 +17,19 @@ from .flight_validation import validate_candidate
 from .models import FlightLeg, LegStatus, Trip, TripStatus
 from .providers.southwest import SouthwestPairingProvider
 from .schedule import (
-    duplicate_preference, merge_trip, overlapping_trip_keys, preserve_duplicate_progress,
-    select_next_leg, select_pending_leg, stale_calendar_trip_keys, trips_equivalent,
+    duplicate_preference,
+    expired_calendar_trip_keys,
+    merge_trip,
+    overlapping_trip_keys,
+    preserve_duplicate_progress,
+    select_next_leg,
+    select_pending_leg,
+    stale_calendar_trip_keys,
+    trip_has_active_tracking,
+    trips_equivalent,
     trips_overlap,
-    validate_collection_horizon, validate_leg_order,
+    validate_collection_horizon,
+    validate_leg_order,
 )
 from .state_machine import PilotTrackerState
 from .storage import TripStore
@@ -53,6 +62,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             hass,
             self.async_import_trip,
             self.store.get,
+            self.async_cleanup_expired_calendar_trips,
             self.async_reconcile_calendar_trips,
         )
 
@@ -434,12 +444,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         removed = 0
         for trip_key in stale_keys:
             trip = self.store.get(trip_key)
-            if (
-                trip is not None
-                and trip is self.trip
-                and trip.current_leg is not None
-                and trip.current_leg.status == LegStatus.ACTIVE
-            ):
+            if trip is not None and trip_has_active_tracking(trip):
                 _LOGGER.warning(
                     "Calendar trip %s disappeared but is being tracked; preserving it until tracking completes",
                     trip_key,
@@ -465,6 +470,44 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
                 )
             self.async_set_updated_data(None)
         return removed
+
+    async def async_cleanup_expired_calendar_trips(
+        self,
+        entity_id: str,
+        now: datetime,
+    ) -> int:
+        """Archive safely expired trips before new calendar imports are validated."""
+        expired_keys = expired_calendar_trip_keys(self.store.trips, entity_id, now)
+        archived = 0
+        for trip_key in expired_keys:
+            trip = self.store.get(trip_key)
+            if trip is None or trip_has_active_tracking(trip):
+                continue
+            trip.status = TripStatus.ARCHIVED
+            await self.store.async_archive(trip)
+            archived += 1
+            _LOGGER.info("Archived expired calendar trip %s from %s", trip_key, entity_id)
+
+        if archived:
+            preferred = self.trip if self.trip and self.store.get(self.trip.key) else None
+            self.trip = self._choose_operational_trip(preferred)
+            # _choose_operational_trip schedules persistence for normal hot
+            # paths. Cleanup needs the selection repaired before importing the
+            # next event, so persist it explicitly here as well.
+            await self.store.async_select(self.trip.key if self.trip else None)
+            if self.schedule_conflicts:
+                self.last_rejection = "overlapping_schedule_conflict"
+                self.state = PilotTrackerState.ERROR
+            else:
+                if self.last_rejection == "overlapping_schedule_conflict":
+                    self.last_rejection = None
+                self.state = (
+                    PilotTrackerState.WAITING_FOR_DUTY
+                    if self.trip
+                    else PilotTrackerState.NO_SCHEDULE
+                )
+            self.async_set_updated_data(None)
+        return archived
 
     async def async_clear_schedule(self) -> None:
         if self.trip:

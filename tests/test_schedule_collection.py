@@ -6,12 +6,14 @@ import pytest
 from custom_components.pilot_tracker.models import LegStatus
 from custom_components.pilot_tracker.providers.southwest import SouthwestPairingProvider
 from custom_components.pilot_tracker.schedule import (
-    duplicate_preference,
-    preserve_duplicate_progress,
     ScheduleConflictError,
     ScheduleLimitError,
+    duplicate_preference,
+    expired_calendar_trip_keys,
     overlapping_trip_keys,
+    preserve_duplicate_progress,
     stale_calendar_trip_keys,
+    trip_has_active_tracking,
     trips_equivalent,
     validate_collection_horizon,
     validate_leg_order,
@@ -40,6 +42,100 @@ def test_collection_over_62_days_is_rejected():
         leg.date = leg.scheduled_departure.date().isoformat()
     with pytest.raises(ScheduleLimitError):
         validate_collection_horizon([first], second)
+
+
+def _shifted_trip(identifier, offset, *, calendar=True):
+    trip = SouthwestPairingProvider().parse(SAMPLE.replace("PAGR", identifier), year=2026)
+    for leg in trip.legs:
+        leg.scheduled_departure += offset
+        leg.scheduled_arrival += offset
+        leg.date = leg.scheduled_departure.date().isoformat()
+    if calendar:
+        trip.source = "crewhub_calendar"
+        trip.metadata["calendar_entity_id"] = "calendar.house"
+    return trip
+
+
+def test_expired_calendar_cleanup_breaks_old_schedule_horizon_deadlock():
+    zone = ZoneInfo("America/Phoenix")
+    now = datetime(2026, 11, 9, 8, tzinfo=zone)
+    old = _shifted_trip("SEP", timedelta(days=34))  # Starts September 10.
+    october = _shifted_trip("OCT", timedelta(days=72))
+    november_12 = _shifted_trip("NOV12", timedelta(days=97))
+    november_19 = _shifted_trip("NOV19", timedelta(days=104))
+    november_25 = _shifted_trip("NOV25", timedelta(days=110))
+
+    loaded = [old, october]
+    with pytest.raises(ScheduleLimitError):
+        validate_collection_horizon(loaded, november_25)
+
+    expired = set(expired_calendar_trip_keys(loaded, "calendar.house", now))
+    operational = [trip for trip in loaded if trip.key not in expired]
+    for imported in (november_12, november_19, november_25):
+        validate_collection_horizon(operational, imported)
+        operational.append(imported)
+
+    assert expired == {old.key, october.key}
+    assert min(
+        leg.scheduled_departure
+        for trip in operational
+        for leg in trip.legs
+        if leg.scheduled_departure > now
+    ).date().isoformat() == "2026-11-12"
+
+
+def test_expired_calendar_cleanup_is_independent_of_query_lookback():
+    zone = ZoneInfo("America/Phoenix")
+    old = _shifted_trip("OLD", timedelta(days=34))
+
+    assert expired_calendar_trip_keys(
+        [old],
+        "calendar.house",
+        datetime(2026, 11, 9, 8, tzinfo=zone),
+    ) == [old.key]
+
+
+def test_expired_calendar_cleanup_preserves_manual_and_other_calendar_trips():
+    zone = ZoneInfo("America/Phoenix")
+    manual = _shifted_trip("MANUAL", timedelta(days=34), calendar=False)
+    other = _shifted_trip("OTHER", timedelta(days=34))
+    other.metadata["calendar_entity_id"] = "calendar.other"
+
+    assert expired_calendar_trip_keys(
+        [manual, other],
+        "calendar.house",
+        datetime(2026, 11, 9, 8, tzinfo=zone),
+    ) == []
+
+
+def test_expired_calendar_cleanup_preserves_any_positive_tracking_state():
+    zone = ZoneInfo("America/Phoenix")
+    active = _shifted_trip("ACTIVE", timedelta(days=34))
+    active.legs[0].status = LegStatus.ACTIVE
+    identified = _shifted_trip("IDENTIFIED", timedelta(days=34))
+    identified.legs[0].tracking_identifiers = {"id": "tracked-flight"}
+
+    assert trip_has_active_tracking(active)
+    assert trip_has_active_tracking(identified)
+    assert expired_calendar_trip_keys(
+        [active, identified],
+        "calendar.house",
+        datetime(2026, 11, 9, 8, tzinfo=zone),
+    ) == []
+
+
+def test_completed_aircraft_history_does_not_pin_an_expired_trip():
+    zone = ZoneInfo("America/Phoenix")
+    completed = _shifted_trip("COMPLETED", timedelta(days=34))
+    completed.legs[0].status = LegStatus.COMPLETED
+    completed.legs[0].tracking_identifiers = {"id": "historical-flight"}
+
+    assert not trip_has_active_tracking(completed)
+    assert expired_calendar_trip_keys(
+        [completed],
+        "calendar.house",
+        datetime(2026, 11, 9, 8, tzinfo=zone),
+    ) == [completed.key]
 
 
 def test_overlapping_loaded_trips_are_both_identified():

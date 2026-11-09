@@ -62,6 +62,40 @@ def validate_collection_horizon(trips: list[Trip], imported: Trip) -> None:
         raise ScheduleLimitError("Loaded schedules span more than 62 days")
 
 
+def trip_has_active_tracking(trip: Trip) -> bool:
+    """Return whether deleting a trip could discard live aircraft ownership."""
+    return any(
+        leg.status == LegStatus.ACTIVE
+        or (leg.status != LegStatus.COMPLETED and bool(leg.tracking_identifiers))
+        for leg in trip.legs
+    )
+
+
+def expired_calendar_trip_keys(
+    trips: list[Trip],
+    entity_id: str,
+    now: datetime,
+    *,
+    grace: timedelta = timedelta(hours=4),
+) -> list[str]:
+    """Return safely expired trips owned by one configured calendar.
+
+    This cleanup is deliberately independent of the calendar query window.
+    Once an untracked calendar trip is safely past its final arrival, keeping
+    it in the operational collection can only block newer imports and trip
+    selection. Manually pasted schedules and live aircraft ownership are
+    never eligible for automatic cleanup.
+    """
+    return [
+        trip.key
+        for trip in trips
+        if trip.source == "crewhub_calendar"
+        and trip.metadata.get("calendar_entity_id") == entity_id
+        and trip.legs[-1].scheduled_arrival + grace < now
+        and not trip_has_active_tracking(trip)
+    ]
+
+
 def stale_calendar_trip_keys(
     trips: list[Trip],
     entity_id: str,

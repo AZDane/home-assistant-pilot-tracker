@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
 import hashlib
 import logging
 import re
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import date, datetime, timedelta
+from time import monotonic
+from typing import Any
 
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
@@ -20,6 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 SYNC_INTERVAL = timedelta(minutes=5)
 SYNC_PAST = timedelta(days=2)
 SYNC_FUTURE = timedelta(days=60)
+STATE_CHANGE_DEBOUNCE_SECONDS = 30
 
 
 class CalendarScheduleSync:
@@ -30,6 +33,7 @@ class CalendarScheduleSync:
         hass: HomeAssistant,
         import_trip: Callable[[Any], Awaitable[Any]],
         get_trip: Callable[[str], Any | None],
+        cleanup_expired_trips: Callable[[str, datetime], Awaitable[int]],
         reconcile_trips: Callable[
             [str, set[str], datetime, datetime], Awaitable[int]
         ],
@@ -37,6 +41,7 @@ class CalendarScheduleSync:
         self.hass = hass
         self._import_trip = import_trip
         self._get_trip = get_trip
+        self._cleanup_expired_trips = cleanup_expired_trips
         self._reconcile_trips = reconcile_trips
         self.entity_id: str | None = None
         self.last_sync: datetime | None = None
@@ -45,6 +50,9 @@ class CalendarScheduleSync:
         self._unsub_interval = None
         self._unsub_state = None
         self._syncing = False
+        self._last_sync_attempt = 0.0
+        self._retry_on_interval_only = False
+        self._logged_warning_signatures: set[str] = set()
 
     async def async_configure(self, entity_id: str | None) -> None:
         self.async_shutdown()
@@ -63,13 +71,18 @@ class CalendarScheduleSync:
 
     @callback
     def _async_state_changed(self, event: Event) -> None:
-        if event.data.get("entity_id") == self.entity_id:
+        if (
+            event.data.get("entity_id") == self.entity_id
+            and not self._retry_on_interval_only
+            and monotonic() - self._last_sync_attempt >= STATE_CHANGE_DEBOUNCE_SECONDS
+        ):
             self.hass.async_create_task(self.async_sync())
 
     async def async_sync(self) -> None:
         if not self.entity_id or self._syncing:
             return
         self._syncing = True
+        self._last_sync_attempt = monotonic()
         try:
             now = dt_util.now()
             response = await self.hass.services.async_call(
@@ -90,6 +103,12 @@ class CalendarScheduleSync:
                     f"Calendar response for {self.entity_id} did not contain an event list"
                 )
             events = calendar_response["events"]
+            # Expired calendar trips must leave the operational collection
+            # before new events are horizon-validated. This cleanup is safe
+            # after a structurally valid response even if one new event later
+            # fails to parse; active tracking and manual imports are protected
+            # by the coordinator's cleanup policy.
+            await self._cleanup_expired_trips(self.entity_id, now)
             recognized = 0
             had_error = False
             seen_trip_keys: set[str] = set()
@@ -99,6 +118,9 @@ class CalendarScheduleSync:
                     continue
                 recognized += 1
                 anchor = self._event_date(event.get("start"), now.date())
+                fingerprint = hashlib.sha256(
+                    b"crewhub-v4\0" + html_text(description).encode()
+                ).hexdigest()
                 try:
                     trip = CrewHubCalendarProvider().parse(
                         description, anchor_date=anchor
@@ -109,9 +131,6 @@ class CalendarScheduleSync:
                         # Preserve the key created by v1.5.0 so upgrading does
                         # not duplicate an already synchronized pairing.
                         trip.trip_id = legacy_id
-                    fingerprint = hashlib.sha256(
-                        b"crewhub-v4\0" + html_text(description).encode()
-                    ).hexdigest()
                     trip.metadata.update({
                         "calendar_entity_id": self.entity_id,
                         "calendar_summary": event.get("summary") or "",
@@ -130,7 +149,12 @@ class CalendarScheduleSync:
                     imported = await self._import_trip(trip)
                     seen_trip_keys.add(imported.key)
                 except (ScheduleParseError, ValueError) as error:
-                    _LOGGER.warning("Could not import CrewHub calendar event on %s: %s", anchor, error)
+                    self._log_warning_once(
+                        f"event:{fingerprint}:{type(error).__name__}:{error}",
+                        "Could not import CrewHub calendar event on %s: %s",
+                        anchor,
+                        error,
+                    )
                     self.last_error = str(error)
                     had_error = True
                     continue
@@ -149,11 +173,29 @@ class CalendarScheduleSync:
             self.last_sync = now
             if not had_error:
                 self.last_error = None
+                self._retry_on_interval_only = False
+                self._logged_warning_signatures.clear()
+            else:
+                # A persistent malformed event should retry on the normal
+                # interval, not once per calendar entity state notification.
+                self._retry_on_interval_only = True
         except Exception as error:  # Calendar providers surface integration-specific errors.
             self.last_error = str(error)
-            _LOGGER.warning("Pilot Tracker calendar synchronization failed: %s", error)
+            self._retry_on_interval_only = True
+            self._log_warning_once(
+                f"sync:{type(error).__name__}:{error}",
+                "Pilot Tracker calendar synchronization failed: %s",
+                error,
+            )
         finally:
             self._syncing = False
+
+    def _log_warning_once(self, signature: str, message: str, *args: Any) -> None:
+        """Log one warning per distinct failure during a failure episode."""
+        if signature in self._logged_warning_signatures:
+            return
+        self._logged_warning_signatures.add(signature)
+        _LOGGER.warning(message, *args)
 
     @staticmethod
     def _looks_like_crewhub(description: str) -> bool:
