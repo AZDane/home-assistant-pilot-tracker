@@ -1,6 +1,14 @@
-# Pilot Tracker for Home Assistant
+<p align="center">
+  <img src="custom_components/pilot_tracker/brand/icon@2x.png" alt="Pilot Tracker logo" width="180">
+</p>
 
-[![Open Pilot Tracker in the Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=AZDane&repository=home-assistant-pilot-tracker&category=integration)
+<h1 align="center">Pilot Tracker for Home Assistant</h1>
+
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/marketplace_repository/?owner=AZDane&amp;repository=home-assistant-pilot-tracker&amp;category=integration">
+    <img src="https://my.home-assistant.io/badges/marketplace_repository.svg" alt="Open Pilot Tracker in the Home Assistant Marketplace">
+  </a>
+</p>
 
 Pilot Tracker imports airline pairing text, identifies the scheduled live flight
 through an existing FlightRadar24 integration, and exposes the pilot's aircraft
