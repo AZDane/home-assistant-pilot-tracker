@@ -29,8 +29,10 @@ class _Services:
     def __init__(self, response=None, error=None):
         self.response = response
         self.error = error
+        self.calls = []
 
     async def async_call(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
         if self.error:
             raise self.error
         return self.response
@@ -87,6 +89,55 @@ def test_cleanup_runs_before_import_and_horizon_validation(monkeypatch):
     assert order == ["cleanup", "import", "import", "import", "reconcile"]
     assert sync.last_error is None
     assert [trip.trip_id for trip in loaded] == ["NOV12", "NOV19", "NOV25"]
+
+
+def test_apple_icloud_calendar_entity_imports_html_crewhub_event(monkeypatch):
+    """An iCloud-backed calendar works through HA's generic calendar action."""
+    entity_id = "calendar.icloud_crew_schedule"
+    event = {
+        "start": "2026-11-12T09:00:00-07:00",
+        "end": "2026-11-12T12:00:00-07:00",
+        "summary": "CrewHub trip",
+        "description": (
+            "LOCAL<br>Thu Nov 12<br>Report 09:00 MST<br>"
+            "123 PHX 10:00 MST LAS 11:00 PST<br>"
+            "Synced from CrewHub BYO"
+        ),
+    }
+    hass = _Hass({entity_id: {"events": [event]}})
+    imported = []
+    reconciled = []
+
+    async def import_trip(trip):
+        imported.append(trip)
+        return trip
+
+    async def cleanup(*args):
+        return 0
+
+    async def reconcile(*args):
+        reconciled.append(args)
+        return 0
+
+    sync = CalendarScheduleSync(hass, import_trip, lambda key: None, cleanup, reconcile)
+    sync.entity_id = entity_id
+    monkeypatch.setattr(calendar_sync_module.dt_util, "now", lambda: NOW)
+
+    asyncio.run(sync.async_sync())
+
+    assert len(imported) == 1
+    assert imported[0].trip_id == "CAL-2026-11-12"
+    assert imported[0].metadata["calendar_entity_id"] == entity_id
+    assert imported[0].metadata["calendar_summary"] == "CrewHub trip"
+    assert imported[0].legs[0].origin == "PHX"
+    assert imported[0].legs[0].destination == "LAS"
+    assert sync.imported_events == 1
+    assert sync.last_error is None
+    assert reconciled
+    args, kwargs = hass.services.calls[0]
+    assert args[:2] == ("calendar", "get_events")
+    assert kwargs["target"] == {"entity_id": entity_id}
+    assert kwargs["return_response"] is True
 
 
 def test_unavailable_calendar_does_not_run_cleanup():

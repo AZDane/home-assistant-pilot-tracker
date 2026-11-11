@@ -22,7 +22,7 @@
       },
       "configure_calendar": {
         "title": "Configure calendar import",
-        "description": "Select the Home Assistant calendar containing CrewHub pairing events. Pilot Tracker reads it locally through Home Assistant; it does not receive Google credentials.",
+        "description": "Select the Home Assistant calendar containing CrewHub pairing events. Google Calendar, Apple iCloud, CalDAV, and other compatible calendar entities can be used. Pilot Tracker reads events through Home Assistant and does not receive calendar-provider credentials.",
         "data": {"calendar_entity": "Flight calendar"}
       },
       "sync_calendar": {

@@ -1,5 +1,7 @@
 # Pilot Tracker for Home Assistant
 
+[![Open Pilot Tracker in the Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=AZDane&repository=home-assistant-pilot-tracker&category=integration)
+
 Pilot Tracker imports airline pairing text, identifies the scheduled live flight
 through an existing FlightRadar24 integration, and exposes the pilot's aircraft
 position and schedule as Home Assistant entities and dashboard cards.
@@ -35,38 +37,52 @@ using the wrong time zone.
 
 ## Requirements
 
-- Home Assistant with [HACS](https://hacs.xyz/) installed.
+- Home Assistant 2026.11 or newer with the built-in
+  [Marketplace](https://www.home-assistant.io/integrations/marketplace/), or
+  HACS on an older Home Assistant release.
 - The
   [FlightRadar24 custom integration](https://github.com/AlexandrErohin/home-assistant-flightradar24)
   configured in Home Assistant.
 
 Pilot Tracker does not require the separately published
-`home-assistant-flightradar24-card` HACS frontend repository. The FlightRadar24
+`home-assistant-flightradar24-card` frontend repository. The FlightRadar24
 integration already bundles its own card with the same custom-element name, so
 installing both FlightRadar24 card implementations can cause a duplicate
 registration error in the browser.
 
-## Install with HACS
+## Install from the Home Assistant Marketplace
 
-1. In HACS, open **Custom repositories**.
-2. Add `https://github.com/AZDane/home-assistant-pilot-tracker` as an
-   **Integration** repository.
-3. Download **Pilot Tracker** and restart Home Assistant.
-4. Open **Settings → Devices & services → Add integration**, then search for
-   **Pilot Tracker**.
+1. Open **Settings → Marketplace**.
+2. In the upper-right corner, select **Add from link**.
+3. Add `https://github.com/AZDane/home-assistant-pilot-tracker`.
+4. Open **Pilot Tracker** in the Marketplace and select **Install**.
+5. If setup does not open automatically, go to **Settings → Devices & services
+   → Add integration** and search for **Pilot Tracker**.
 
-## Recommended setup: Google Calendar / CrewHub synchronization
+Home Assistant 2026.11 automatically migrates existing HACS installations and
+custom repositories to the Marketplace. On Home Assistant 2026.10 or earlier,
+use the equivalent **HACS → Custom repositories** flow and add this repository
+as an **Integration**.
 
-Google Calendar is the primary and recommended import method because CrewHub
-can revise flight times, routes, hotels, and other trip details without another
-manual paste. First configure Google Calendar in Home Assistant. Then add
-`type: custom:pilot-tracker-card` to a dashboard and select the CrewHub
-`calendar.*` entity in **Schedule Manager**. The selection is saved and remains
-active after restarts. The same selection remains available under **Settings →
-Devices & services → Pilot Tracker → Configure → Configure calendar import**.
+## Recommended setup: Home Assistant calendar / CrewHub synchronization
+
+Calendar synchronization is the primary and recommended import method because
+CrewHub can revise flight times, routes, hotels, and other trip details without
+another manual paste. Pilot Tracker works with any compatible calendar already
+exposed to Home Assistant as a `calendar.*` entity, including Google Calendar
+and Apple Calendar through the Apple iCloud or CalDAV integration. If your
+CrewHub calendar is already synced to Apple Calendar and appears in Home
+Assistant, no additional calendar-provider setup is needed in Pilot Tracker.
+
+Add `type: custom:pilot-tracker-card` to a dashboard and select the CrewHub
+`calendar.*` entity in **Schedule Manager**. The calendar events must include
+the CrewHub pairing details in their descriptions. The selection is saved and
+remains active after restarts. The same selection remains available under
+**Settings → Devices & services → Pilot Tracker → Configure → Configure
+calendar import**.
 
 Pilot Tracker uses Home Assistant's calendar API and never receives or stores
-Google credentials directly.
+calendar-provider credentials directly.
 
 Recognized CrewHub trip events are imported automatically. Pilot Tracker
 synchronizes every five minutes and whenever the calendar entity updates.
@@ -84,6 +100,28 @@ When a calendar event matches a pasted pairing, the calendar version becomes
 authoritative and future event revisions update that schedule in place.
 When CrewHub supplies a layover hotel and telephone number, both dashboard
 cards display it from the preceding duty's arrival until the next report time.
+
+### Calendar compatibility and troubleshooting
+
+- Confirm the calendar appears in Home Assistant as a `calendar.*` entity before
+  selecting it in Pilot Tracker. For Apple Calendar, configure either the
+  [Apple iCloud integration](https://www.home-assistant.io/integrations/icloud/)
+  or [CalDAV](https://www.home-assistant.io/integrations/caldav/).
+- Apple iCloud calendar entities are read-only in Home Assistant. That does not
+  prevent Pilot Tracker from importing their events.
+- Open a CrewHub event in the source calendar and confirm its description still
+  contains `LOCAL`, dated duty headings such as `Thu Nov 12`, and the flight
+  rows. Pilot Tracker ignores ordinary calendar events and cannot reconstruct a
+  pairing when the calendar provider omits its description.
+- In **Schedule Manager**, select the exact calendar containing the CrewHub
+  events, not a similarly named personal or shared calendar.
+- To diagnose a missed import, open **Settings → Devices & services → Pilot
+  Tracker → Configure → Synchronize calendar now**. The result shows the
+  selected entity, last synchronization time, recognized event count, and the
+  most recent error.
+- If the Apple iCloud integration does not expose the expected calendar, try
+  CalDAV with the iCloud server URL. Apple may require an app-specific password,
+  as described in the Home Assistant CalDAV documentation.
 
 ## Optional manual import
 
