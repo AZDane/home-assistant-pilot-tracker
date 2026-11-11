@@ -72,15 +72,21 @@ custom repositories to the Marketplace. On Home Assistant 2026.10 or earlier,
 use the equivalent **HACS → Custom repositories** flow and add this repository
 as an **Integration**.
 
-## Recommended setup: Home Assistant calendar / CrewHub synchronization
+## Recommended setup: Google Calendar / CrewHub synchronization
 
-Calendar synchronization is the primary and recommended import method because
-CrewHub can revise flight times, routes, hotels, and other trip details without
-another manual paste. Pilot Tracker works with any compatible calendar already
-exposed to Home Assistant as a `calendar.*` entity, including Google Calendar
-and Apple Calendar through the Apple iCloud or CalDAV integration. If your
-CrewHub calendar is already synced to Apple Calendar and appears in Home
-Assistant, no additional calendar-provider setup is needed in Pilot Tracker.
+Google Calendar is the verified and recommended provider for CrewHub
+synchronization. It has been tested end to end with Pilot Tracker and allows
+CrewHub to revise flight times, routes, hotels, and other trip details without
+another manual paste. First configure the
+[Google Calendar integration](https://www.home-assistant.io/integrations/google/)
+in Home Assistant.
+
+Pilot Tracker reads provider-neutral `calendar.*` entities through Home
+Assistant's calendar API. Apple Calendar through Apple iCloud or CalDAV follows
+the same code path and is covered by regression tests, but it has not yet been
+verified end to end with a live CrewHub calendar. If a CrewHub calendar synced
+through Apple appears in Home Assistant and retains the complete event
+description, it should work without additional provider setup in Pilot Tracker.
 
 Add `type: custom:pilot-tracker-card` to a dashboard and select the CrewHub
 `calendar.*` entity in **Schedule Manager**. The calendar events must include
@@ -111,8 +117,10 @@ cards display it from the preceding duty's arrival until the next report time.
 
 ### Calendar compatibility and troubleshooting
 
-- Confirm the calendar appears in Home Assistant as a `calendar.*` entity before
-  selecting it in Pilot Tracker. For Apple Calendar, configure either the
+- For the verified setup, configure Google Calendar and confirm the CrewHub
+  calendar appears in Home Assistant as a `calendar.*` entity before selecting
+  it in Pilot Tracker.
+- To try Apple Calendar, configure either the
   [Apple iCloud integration](https://www.home-assistant.io/integrations/icloud/)
   or [CalDAV](https://www.home-assistant.io/integrations/caldav/).
 - Apple iCloud calendar entities are read-only in Home Assistant. That does not
