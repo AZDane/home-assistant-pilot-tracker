@@ -2,6 +2,7 @@
   "domain": "pilot_tracker",
   "name": "Pilot Tracker",
   "after_dependencies": ["calendar", "flightradar24"],
+  "categories": ["vehicles_transport.flights"],
   "codeowners": ["@AZDane"],
   "config_flow": true,
   "dependencies": ["http"],
