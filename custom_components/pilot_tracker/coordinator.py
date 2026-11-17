@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from time import monotonic
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
-from .airports import airport_coordinates
+from .airports import airport_coordinates, airport_timezone
 from .arrival import arrival_complete, arrival_signals, event_matches_flight
 from .calendar_sync import CalendarScheduleSync
 from .flight_validation import validate_candidate
@@ -58,6 +59,7 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self._accepted_updated_at = 0.0
         self._last_tracking_request_at = 0.0
         self.schedule_conflicts: list[str] = []
+        self.time_zones: dict[str, tzinfo] = {}
         self.calendar_sync = CalendarScheduleSync(
             hass,
             self.async_import_trip,
@@ -68,6 +70,8 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
 
     async def async_restore(self) -> None:
         self.trip = await self.store.async_load()
+        for trip in self.store.trips:
+            await self._async_prepare_trip_time_zones(trip)
         self.trip = await self._async_reconcile_duplicate_schedules(self.trip)
         # v1.6.2 could retain the pasted provider name while copying calendar
         # metadata during duplicate cleanup. Repair those stored schedules so
@@ -350,11 +354,14 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
             self.flight_path = self.flight_path[-1000:]
 
     async def async_import_schedule(self, text: str) -> Trip:
-        imported = SouthwestPairingProvider().parse(text)
+        imported = await self.hass.async_add_executor_job(
+            SouthwestPairingProvider().parse, text
+        )
         return await self.async_import_trip(imported)
 
     async def async_import_trip(self, imported: Trip) -> Trip:
         """Validate and merge a trip from any supported schedule source."""
+        await self._async_prepare_trip_time_zones(imported)
         validate_leg_order(imported)
         duplicates = [
             trip for trip in self.store.trips
@@ -389,6 +396,26 @@ class PilotTrackerCoordinator(DataUpdateCoordinator[None]):
         self.async_set_updated_data(None)
         await self.async_evaluate_tracking()
         return merged
+
+    async def _async_prepare_trip_time_zones(self, trip: Trip) -> None:
+        """Resolve every zone used by sensor properties outside the event loop."""
+        airports = {
+            airport
+            for leg in trip.legs
+            for airport in (leg.origin, leg.destination)
+        }
+        domicile = trip.metadata.get("domicile_airport")
+        if domicile:
+            airports.add(domicile)
+        for airport in airports:
+            code = airport.strip().upper()
+            if code in self.time_zones:
+                continue
+            zone_name = airport_timezone(code)
+            zone = await dt_util.async_get_time_zone(zone_name)
+            if zone is None:
+                raise ValueError(f"No time zone found for airport {code}")
+            self.time_zones[code] = zone
 
     async def _async_reconcile_duplicate_schedules(self, preferred: Trip | None) -> Trip | None:
         """Collapse legacy CAL and pairing-ID copies created by older versions."""

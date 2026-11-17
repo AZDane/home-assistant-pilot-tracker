@@ -1,10 +1,10 @@
 """Pilot Tracker integration."""
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CoreState, EVENT_HOMEASSISTANT_STARTED, HomeAssistant
+from homeassistant.core import EVENT_HOMEASSISTANT_STARTED, CoreState, HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
 from .airports import load_airports
 from .const import CONF_CALENDAR_ENTITY, DOMAIN, PLATFORMS
@@ -71,8 +71,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     )
     hass.services.async_register(DOMAIN, "reset_aircraft", reset_aircraft)
     hass.services.async_register(DOMAIN, "complete_current_leg", complete_leg)
-    hass.services.async_register(
-        DOMAIN, "configure_calendar", configure_calendar,
+    async_register_admin_service(
+        hass, DOMAIN, "configure_calendar", configure_calendar,
         schema=vol.Schema({vol.Required(CONF_CALENDAR_ENTITY): cv.entity_id}),
     )
     return True

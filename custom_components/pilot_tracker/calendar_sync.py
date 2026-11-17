@@ -7,6 +7,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
+from functools import partial
 from time import monotonic
 from typing import Any
 
@@ -122,8 +123,12 @@ class CalendarScheduleSync:
                     b"crewhub-v4\0" + html_text(description).encode()
                 ).hexdigest()
                 try:
-                    trip = CrewHubCalendarProvider().parse(
-                        description, anchor_date=anchor
+                    trip = await self.hass.async_add_executor_job(
+                        partial(
+                            CrewHubCalendarProvider().parse,
+                            description,
+                            anchor_date=anchor,
+                        )
                     )
                     legacy_id = f"CAL-{trip.legs[0].date}"
                     legacy_key = f"{legacy_id}:{trip.legs[0].date}"

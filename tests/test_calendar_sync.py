@@ -46,6 +46,9 @@ class _Hass:
     def async_create_task(self, coroutine):
         self.created_tasks.append(coroutine)
 
+    async def async_add_executor_job(self, target, *args):
+        return target(*args)
+
 
 def _event(day):
     return {
@@ -122,6 +125,13 @@ def test_apple_icloud_calendar_entity_imports_html_crewhub_event(monkeypatch):
     sync = CalendarScheduleSync(hass, import_trip, lambda key: None, cleanup, reconcile)
     sync.entity_id = entity_id
     monkeypatch.setattr(calendar_sync_module.dt_util, "now", lambda: NOW)
+    provider = calendar_sync_module.CrewHubCalendarProvider
+    zones = {"PHX": "America/Phoenix", "LAS": "America/Los_Angeles"}
+    monkeypatch.setattr(
+        calendar_sync_module,
+        "CrewHubCalendarProvider",
+        lambda: provider(zones.__getitem__),
+    )
 
     asyncio.run(sync.async_sync())
 

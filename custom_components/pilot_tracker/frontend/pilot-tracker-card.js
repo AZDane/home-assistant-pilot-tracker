@@ -343,21 +343,21 @@ class PilotTrackerCard extends HTMLElement {
           dialog { width:min(680px,90vw); border:0; border-radius:14px; color:var(--primary-text-color); background:var(--card-background-color); }
           @media(max-width:600px){ .details{grid-template-columns:1fr 1fr}.map{min-height:300px}.airport{font-size:25px}.schedule-head{align-items:flex-start;flex-direction:column}.legs th:nth-child(4),.legs td:nth-child(4){display:none}.legs th,.legs td{padding:9px 5px;font-size:13px} }
         </style>
-        <div class="header"><h2>${this.config.title}</h2><span class="status ${status}">${this.pretty(status)}</span></div>
+        <div class="header"><h2>${escapeHtml(this.config.title)}</h2><span class="status ${escapeHtml(status)}">${escapeHtml(this.pretty(status))}</span></div>
         <div class="route">
-          <div class="airport">${this.state(this.config.current_origin_entity)}</div>
-          <div class="flight"><ha-icon icon="mdi:airplane"></ha-icon><br>${current}</div>
-          <div class="airport">${this.state(this.config.current_destination_entity)}</div>
+          <div class="airport">${escapeHtml(this.state(this.config.current_origin_entity))}</div>
+          <div class="flight"><ha-icon icon="mdi:airplane"></ha-icon><br>${escapeHtml(current)}</div>
+          <div class="airport">${escapeHtml(this.state(this.config.current_destination_entity))}</div>
         </div>
         ${rejection ? `<div class="alert"><b>Attention:</b> ${this.rejectionText(rejection, rejectionDetail)}</div>` : ""}
         ${conflicts.length ? `<div class="alert"><b>Schedule conflict:</b> Choose the pairing to keep below.</div>` : ""}
         ${hasFlight ? `<div class="map" id="pilot-map"></div>` : this.nextFlightPanel(next)}
         <div class="details">
-          <div><div class="label">Trip</div><div class="value">${trip}</div></div>
-          <div><div class="label">Current flight</div><div class="value">${current}</div></div>
-          <div><div class="label">Next flight</div><div class="value">${next}</div></div>
-          <div><div class="label">Next route</div><div class="value">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div></div>
-          <div><div class="label">Tracked flights</div><div class="value">${this.attr(this.config.tracking_entity,"tracked_flights",0)}</div></div>
+          <div><div class="label">Trip</div><div class="value">${escapeHtml(trip)}</div></div>
+          <div><div class="label">Current flight</div><div class="value">${escapeHtml(current)}</div></div>
+          <div><div class="label">Next flight</div><div class="value">${escapeHtml(next)}</div></div>
+          <div><div class="label">Next route</div><div class="value">${escapeHtml(this.state(this.config.next_origin_entity))} → ${escapeHtml(this.state(this.config.next_destination_entity))}</div></div>
+          <div><div class="label">Tracked flights</div><div class="value">${escapeHtml(this.attr(this.config.tracking_entity,"tracked_flights",0))}</div></div>
           <div><div class="label">Position</div><div class="value">${this.attr(this.config.tracking_entity,"position_fresh",false) ? "Live" : "Waiting"}</div></div>
           ${currentHotel ? `<div><div class="label">Layover hotel · ${escapeHtml(layoverAirport || "")}</div><div class="value">${escapeHtml(currentHotel)}${hotelPhone ? `<br>${escapeHtml(hotelPhone)}` : ""}</div></div>` : ""}
           <div><div class="label">Current departure · Device</div><div class="value">${escapeHtml(deviceTime(this.attr(this.config.current_flight_entity,"scheduled_departure")))}</div></div>
@@ -409,7 +409,7 @@ class PilotTrackerCard extends HTMLElement {
     const local = attributes.departure_local_display || "Schedule unavailable";
     const airport = attributes.origin_icao || attributes.origin || "Origin";
     const device = deviceTime(attributes.scheduled_departure);
-    return `<div class="next-panel"><div class="label">Next scheduled flight</div><div class="next-route">${this.state(this.config.next_origin_entity)} → ${this.state(this.config.next_destination_entity)}</div><div>${next}</div><div style="margin-top:10px"><b>Device time:</b> ${escapeHtml(device)}</div><div><b>${escapeHtml(airport)} time:</b> ${escapeHtml(local)}</div></div>`;
+    return `<div class="next-panel"><div class="label">Next scheduled flight</div><div class="next-route">${escapeHtml(this.state(this.config.next_origin_entity))} → ${escapeHtml(this.state(this.config.next_destination_entity))}</div><div>${escapeHtml(next)}</div><div style="margin-top:10px"><b>Device time:</b> ${escapeHtml(device)}</div><div><b>${escapeHtml(airport)} time:</b> ${escapeHtml(local)}</div></div>`;
   }
 
   formatDeviceTime(value) {

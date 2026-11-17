@@ -2,12 +2,10 @@
 
 from datetime import datetime
 
-from zoneinfo import ZoneInfo
-
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .airports import airport_icao, airport_timezone
+from .airports import airport_icao
 from .const import DOMAIN
 
 
@@ -136,7 +134,11 @@ class CurrentFlightSensor(BaseSensor):
 
     @property
     def extra_state_attributes(self):
-        return _leg_attributes(self.coordinator.current_leg, self.coordinator.trip)
+        return _leg_attributes(
+            self.coordinator.current_leg,
+            self.coordinator.trip,
+            self.coordinator.time_zones,
+        )
 
 
 class NextFlightSensor(BaseSensor):
@@ -150,7 +152,11 @@ class NextFlightSensor(BaseSensor):
 
     @property
     def extra_state_attributes(self):
-        return _leg_attributes(self.coordinator.next_leg, self.coordinator.trip)
+        return _leg_attributes(
+            self.coordinator.next_leg,
+            self.coordinator.trip,
+            self.coordinator.time_zones,
+        )
 
 
 class CurrentOriginSensor(BaseSensor):
@@ -230,10 +236,10 @@ class FlightMapSensor(BaseSensor):
         return {"flights": [mapped_flight], "bounds": bounds}
 
 
-def _leg_attributes(leg, trip=None):
+def _leg_attributes(leg, trip, time_zones):
     if leg is None:
         return {}
-    displays = _leg_time_displays(leg, trip)
+    displays = _leg_time_displays(leg, trip, time_zones)
     return {
         "origin": leg.origin,
         "destination": leg.destination,
@@ -245,12 +251,12 @@ def _leg_attributes(leg, trip=None):
     }
 
 
-def _leg_time_displays(leg, trip):
+def _leg_time_displays(leg, trip, time_zones):
     """Return explicitly labeled domicile and airport-local schedule times."""
     domicile = (trip.metadata.get("domicile_airport") if trip else None) or leg.origin
-    domicile_zone = ZoneInfo(airport_timezone(domicile))
-    origin_zone = ZoneInfo(airport_timezone(leg.origin))
-    destination_zone = ZoneInfo(airport_timezone(leg.destination))
+    domicile_zone = time_zones[domicile.strip().upper()]
+    origin_zone = time_zones[leg.origin.strip().upper()]
+    destination_zone = time_zones[leg.destination.strip().upper()]
     display_format = "%a %b %-d, %-I:%M %p %Z"
     return {
         "domicile_airport": domicile,
@@ -293,7 +299,7 @@ def _schedule_summaries(coordinator, selected_trip):
                     "arrival": leg.scheduled_arrival.isoformat(),
                     "departure_display": leg.scheduled_departure.strftime("%H:%M %Z"),
                     "arrival_display": leg.scheduled_arrival.strftime("%H:%M %Z"),
-                    **_leg_time_displays(leg, trip),
+                    **_leg_time_displays(leg, trip, coordinator.time_zones),
                     "status": leg.status.value,
                     "qualifier": leg.qualifier,
                     "duty_period": leg.duty_period,
